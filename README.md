@@ -6,7 +6,8 @@ Scripts and analyses for the drought paper.
 [Figure 1 analyses](#Figure-1-analyses)
 
 [Trade-offs analyses](#Trade-offs-analyses)
-[Herbicide resistance estimations](##Herbicide-resistance-estimations)
+
+  [Herbicide resistance estimations](###Herbicide-resistance-estimations)
 
 
 [Figure 2 analyses](#Figure-2-analyses)
@@ -24,7 +25,7 @@ Scripts and analyses for the drought paper.
 Drought LD50 calculations, multiple linear regression models and Wilcoxon tests : [figure1_v2.R](https://github.com/rozenn-pineau/drought-project/figure1_v2.R) and [Figure1E.Rmd](https://github.com/rozenn-pineau/drought-project/Figure1E.Rmd).
 
 # Trade-offs analyses
-## Herbicide resistance estimations
+### Herbicide resistance estimations
 
 To quantify resistance in drought samples, we calculated the depth at EPSPS position in each sample. 
 
