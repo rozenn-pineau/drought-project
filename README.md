@@ -26,7 +26,7 @@ Scripts and analyses for the drought paper.
 
 
 # Figure 1 analyses
-Drought LD50 calculations, multiple linear regression models and Wilcoxon tests : [figure1_v2.R](https://github.com/rozenn-pineau/drought-project/figure1_v2.R) and [Figure1E.Rmd](https://github.com/rozenn-pineau/drought-project/Figure1E.Rmd).
+Drought LD50 calculations, multiple linear regression models and Wilcoxon tests : [figure1_v2.R](https://github.com/rozenn-pineau/drought-project/blob/main/figure1_v2.R) and [Figure1E.Rmd](https://github.com/rozenn-pineau/drought-project/blob/main/Figure1E.Rmd).
 
 # Trade-offs analyses
 ### Herbicide resistance estimations
@@ -97,7 +97,7 @@ done
 #same file order as the EPSPS depth file
 
 ```
-Rscript to plot results from trade-offs analyses : [trade_offs_control.Rmd](https://github.com/rozenn-pineau/drought-project/trade_offs_control.Rmd)
+Rscript to plot results from trade-offs analyses : [trade_offs_control.Rmd](https://github.com/rozenn-pineau/drought-project/blob/main/trade_offs_control.Rmd)
 
 # Figure 3 analyses
 
@@ -129,9 +129,6 @@ do admixture --cv $my_bed $K ;
 
 done
 ```
-
-Figure 2 plot and multiple regression analyses: [plot_PCA_res.R](https://github.com/rozenn-pineau/drought-project/trade_offs_control.Rmd)
-
 
 # Figure 3 analyses
 
@@ -175,7 +172,7 @@ vcftools --vcf fst/ancestry_maf.vcf \
 
 ```
 
-Rscript to choose Fst threshold : [fst_on_ancestry.Rmd](https://github.com/rozenn-pineau/Drought-paper/blob/main/fst_on_ancestry.Rmd)
+Rscript to choose Fst threshold : [fst_on_ancestry.Rmd](https://github.com/rozenn-pineau/drought-project/blob/main/fst_on_ancestry.Rmd)
 
 ### Step (3) : keep the variants common to the ancestry variant file and the drought variant file
 The ancestry was filtered for the high Fst sites. This filtered file was used to keep the intersection between the ancestry variant file and the drought variant file (bcftools isec).
@@ -193,7 +190,7 @@ Rscript to calculate rho between sites : [calculate_ldhat_between_sites.Rmd](htt
 
 ### Step (5) : extract allele counts from the ancestry variant file
 
-[genotype_to_allele_counts.awk](https://github.com/rozenn-pineau/Drought-paper/blob/main/genotype_to_allele_counts.awk)
+[genotype_to_allele_counts.awk](https://github.com/rozenn-pineau/drought-project/blob/main/genotype_to_allele_counts.awk)
 
 exanple output :
 22 22 for 22 individuals, all heterozygotes
@@ -205,7 +202,7 @@ exanple output :
 1,1 for hets
 0,2 for homs alternative
 
-[vcf_to_read_counts.awk](https://github.com/rozenn-pineau/Drought-paper/blob/main/vcf_to_read_counts.awk)
+[vcf_to_read_counts.awk](https://github.com/rozenn-pineau/drought-project/blob/main/vcf_to_read_counts.awk)
 
 ### Step (7) : put the file together
 
@@ -279,7 +276,7 @@ done
 
 ### Visualize : plot ancestry by chromosome in R
 
-We used the following script [plot_ancestry.R](https://github.com/rozenn-pineau/Drought-paper/blob/main/plot_ancestry.R) to visualize ancestry per chromosome for each smaple in the dataset, ordered by longitude. 
+We used the following script [plot_ancestry.R](https://github.com/rozenn-pineau/drought-project/blob/main/plot_ancestry.R) to visualize ancestry per chromosome for each smaple in the dataset, ordered by longitude. 
 
 To make sure independent runs gave consistent ancestry calls, I compared the output from two runs that had different starting proportions (-.3 and -.37 versus  -.5 and -.17) : [compare_ancestry_hmm_runs.R](https://github.com/rozenn-pineau/Drought-paper/blob/main/compare_ancestry_hmm_runs.R). I tested 1000 random sites on two chromosomes and dit not identify differences in ancestry calls between models, suggesting the robustness of the results. 
 
