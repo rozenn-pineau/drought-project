@@ -213,11 +213,7 @@ Paste columns together to make the full file, following instructions on ancestry
 
 
 
-
-
-
-
-# Processing results from ancestry_hmm output
+### Processing results from ancestry_hmm output
 
 Ancestry_hmm gives as an output one file per sample, that has the following header :
 ```
