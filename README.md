@@ -131,6 +131,10 @@ do admixture --cv $my_bed $K ;
 done
 ```
 
+Rscript to plot results admixture : [plot_PCA_res.R](https://github.com/rozenn-pineau/drought-project/blob/main/plot_PCA_res.R)
+
+
+
 # Figure 3 analyses
 
 ## Ancestry mapping using ancestry hmm on the contemporary dataset
