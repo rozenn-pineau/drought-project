@@ -1,0 +1,475 @@
+---
+title: "Plot climate data at the herbarium samples locations from 1828 to 2011"
+output: html_document
+date: "2025-05-25"
+---
+
+# (1) Upload datasets
+```{r upload}
+library(dplyr)
+library(extrafont)
+library(geosphere)
+library(data.table)
+library(car)
+library(scales)
+library(paletteer)
+library(lsmeans)
+library(colourvalues)
+
+rm(list= ls())
+
+climate <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/54samples/climate_NOAA.txt", header = T)
+
+tmax <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/54samples/tmax_NOAA.txt", sep = "\t", header = T)
+
+prcp <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/54samples/prcp_NOAA.txt", sep = "\t", header = T)
+
+#there is one outstanding value in the dataset, that corresponds to a place next to Saint Louis (38°39'56.1"N 90°42'25.4"W)
+#that was very rainy in 2009, which is strange. I compared to another dataset, and it does not align so I will remove this point from the 
+#dataset.
+prcp <- prcp[-which(prcp$prcp == max(prcp$prcp)),]
+summary(prcp$prcp)
+
+climate <- climate[-which(climate$prcp == max(climate$prcp)),]
+
+n_snp <- dim(tmax[,-c(1:6)])[2]
+
+#data quality checks
+which(tmax$year>2000) #2
+length(which(prcp$year>2000))
+
+#distance
+par(family= "Times New Roman", cex.axis = 1, cex.lab = 1.5)
+hist(climate$dist, breaks = 50, main = "Distance between sample and station", xlab = "Distance")
+
+summary(climate$dist)
+summary(climate$prcp)
+```
+
+# (2) Assign Ag/Nat/Dist to each herbarium sample to add in the model
+```{r upload_env_info}
+env_info <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/herbarium_env.txt", sep = "\t", header = T)
+colnames(env_info) <- c("sample", "Env", "Year")
+
+#merge Ag and Dist together
+env_info$env_mod <- env_info$Env
+env_info$env_mod[env_info$Env=="Dist" & !is.na(env_info$Env=="Dist")] <- "Ag"
+
+#merge climate and env
+climate_full <- merge(climate, env_info, by = "sample")
+
+```
+
+# (3) Long-format matrix to test for associations between haplotype and climate 
+
+```{r long_format_env}
+climate_long <- melt(climate_full, measure.vars = c("site.1", "site.2", "site.3", "site.4", "site.5",
+                                    "site.6", "site.7", "site.8", "site.9", "site.10",
+                                    "site.11", "site.12", "site.13", "site.14", "site.15",
+                                    "site.16", "site.17", "site.18", "site.19", "site.20",
+                                    "site.21", "site.22", "site.23", "site.24", "site.25",
+                                    "site.26", "site.27", "site.28", "site.29", "site.30",
+                                    "site.31", "site.32", "site.33"))
+summary(climate_long)
+
+lm.res <- lm(data = climate_long, 
+             value ~ Year + variable + env_mod)
+summary(lm.res)
+Anova(lm.res, type = "II")
+#no effect of the environment in the model with every locus
+
+
+#Try each model separately : 
+lm.res.nat <- lm(data = climate_long[climate_long$env_mod=="Nat",], value ~ Year )
+summary(lm.res.nat)
+lm.res.ag <- lm(data = climate_long[climate_long$env_mod=="Ag",], value ~ Year )
+summary(lm.res.ag)
+
+#plot to help visualization
+par(family = "Times New Roman")
+plot(1, type="n", xlab="Year", ylab="Haplotype", xlim=c(1828, 2015), ylim=c(0, 1))
+points(climate_long$Year[climate_long$env_mod=="Nat"], climate_long$value[climate_long$env_mod=="Nat"], pch = 16)
+points(climate_long$Year[climate_long$env_mod=="Ag"], climate_long$value[climate_long$env_mod=="Ag"], pch = 16, col = "gray")
+#add linear regressions
+x <- c(1828, 2015)
+points(x, summary(lm.res.nat)$coef[2]*x + summary(lm.res.nat)$coef[1] , type = "l", lwd = 2)
+points(x, summary(lm.res.ag)$coef[2]*x + summary(lm.res.ag)$coef[1] , type = "l", lwd = 2, col = "gray")
+
+#legend
+legend(1830,0.9, legend = c("Nat", "Ag"), pch = 16, col = c("black", "gray"), bty = "n")
+```
+# (4) Model with all loci (collective effect) - no habitat
+## Model
+test : Frequency ~ year + loci + climate + lat/long (maybe interaction between year and loci)
+
+```{r model_test}
+
+lm.res4 <- lm(data = climate_long, 
+             value ~ tmax*year + prcp*year  + variable + samp_lat + samp_lon)
+summary(lm.res4)
+Anova(lm.res4, type = "III")
+AIC(lm.res4) #903.233
+#slopes
+lm.res4 <- lm(data = climate_long, 
+             value ~ tmax*year + prcp*year  + variable + samp_lat + samp_lon)
+emt <- emtrends(lm.res4, ~ tmax, "year",
+                at = list(tmax = c(25,35,45)))
+
+```
+
+## Plot
+```{r}
+pdf(file=paste("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/5.herbarium/Supp_F5.pdf", sep="" ), bg = "transparent", width=5, height=4, family = "Times New Roman")
+
+par(family= "Times New Roman")
+tmax_col <- c("#feb24c","#fc4e2a","#800026")
+
+lsm <- lsmip(lm.res4, tmax ~ year, plot=F, 
+             at = list(year = c(1880,1950,2005), tmax = c(seq(25 ,45, by = 10)), prcp = 50))
+lsm2 <- lsmip(lm.res4, tmax ~ year, plot=F, 
+             at = list(year = c(1880,1950,2005), tmax = c(seq(25 ,45, by = 10)), prcp = 850))
+
+#Plot for linear predictions of temperature
+plot(lsm$year[c(1,4,7)], lsm$yvar[c(1,4,7)], type = "l", col = tmax_col[1], lwd =2,
+     xlab = "Year", ylab = "Linear prediction", ylim = c(0,1.1), lty = 2)
+ #make polygon where coordinates start with lower limit and 
+ # then upper limit in reverse order
+polygon(c(lsm$year[c(1,4,7)],rev(lsm$year[c(1,4,7)])),
+         c(lsm$yvar[c(1,4,7)]+lsm$SE[c(1,4,7)],rev(lsm$yvar[c(1,4,7)]-lsm$SE[c(1,4,7)])),
+         col = scales::alpha(tmax_col[1],.3), border = FALSE)
+lines(lsm$year[c(1,4,7)], lsm$yvar[c(1,4,7)], type = "l", col = tmax_col[1], lwd =2,
+     xlab = "Year", ylab = "Linear prediction", ylim = c(0,1), lty = 2)
+ 
+polygon(c(lsm$year[c(1,4,7)+1],rev(lsm$year[c(1,4,7)+1])),
+         c(lsm$yvar[c(1,4,7)+1]+lsm$SE[c(1,4,7)+1],rev(lsm$yvar[c(1,4,7)+1]-lsm$SE[c(1,4,7)+1])),
+         col = scales::alpha(tmax_col[2],.3), border = FALSE)
+lines(lsm$year[c(1,4,7)+1], lsm$yvar[c(1,4,7)+1], col = tmax_col[2], lwd =2, lty = 2)
+
+polygon(c(lsm$year[c(1,4,7)+2],rev(lsm$year[c(1,4,7)+2])),
+         c(lsm$yvar[c(1,4,7)+2]+lsm$SE[c(1,4,7)+2],rev(lsm$yvar[c(1,4,7)+2]-lsm$SE[c(1,4,7)+2])),
+         col = scales::alpha(tmax_col[3],.3), border = FALSE)
+lines(lsm$year[c(1,4,7)+2], lsm$yvar[c(1,4,7)+2], col = tmax_col[3], lwd =2, lty = 2)
+
+
+#Plot for linear predictions of temperature - higher prcp
+polygon(c(lsm2$year[c(1,4,7)],rev(lsm2$year[c(1,4,7)])),
+         c(lsm2$yvar[c(1,4,7)]+lsm2$SE[c(1,4,7)],rev(lsm2$yvar[c(1,4,7)]-lsm2$SE[c(1,4,7)])),
+         col = scales::alpha(tmax_col[1],.3), border = FALSE)
+lines(lsm2$year[c(1,4,7)], lsm2$yvar[c(1,4,7)], type = "l", col = tmax_col[1], lwd =2,
+     xlab = "Year", ylab = "Linear prediction", ylim = c(0,1), lty = 1)
+ 
+polygon(c(lsm2$year[c(1,4,7)+1],rev(lsm2$year[c(1,4,7)+1])),
+         c(lsm2$yvar[c(1,4,7)+1]+lsm2$SE[c(1,4,7)+1],rev(lsm2$yvar[c(1,4,7)+1]-lsm2$SE[c(1,4,7)+1])),
+         col = scales::alpha(tmax_col[2],.3), border = FALSE)
+lines(lsm2$year[c(1,4,7)+1], lsm2$yvar[c(1,4,7)+1], col = tmax_col[2], lwd =2, lty = 1)
+
+polygon(c(lsm2$year[c(1,4,7)+2],rev(lsm2$year[c(1,4,7)+2])),
+         c(lsm2$yvar[c(1,4,7)+2]+lsm2$SE[c(1,4,7)+2],rev(lsm2$yvar[c(1,4,7)+2]-lsm2$SE[c(1,4,7)+2])),
+         col = scales::alpha(tmax_col[3],.3), border = FALSE)
+lines(lsm2$year[c(1,4,7)+2], lsm2$yvar[c(1,4,7)+2], col = tmax_col[3], lwd =2, lty = 1)
+
+legend("bottomleft", legend = c(25,35,45,50,850), col = c(tmax_col,"black", "black")
+       , bty = "n", lty = c(1,1,1,2,1), lwd = 2, title = "Temp. max.        Tot. precip.", cex = 0.8, border=F, ncol=2)
+
+
+dev.off()
+```
+
+# (5) Adding Environment to the model 
+
+## Model
+```{r model_test}
+lm.res.env <- lm(data = climate_long, 
+             value ~ tmax*year + prcp*year + Env*year + variable + samp_lat + samp_lon ) 
+AIC(lm.res.env) #774.2903 
+
+summary(lm.res.env)
+Anova(lm.res.env, type = "III")
+
+#predictions with habitat
+lsm <- lsmip(lm.res.env,  ~ year + prcp + Env, plot=F,
+            at = list(year = c(1880,1950,2005), Env = c("Ag", "Nat"), prcp = c(5,30,85)))
+#slope values with habitat
+emt <- emtrends(lm.res.env, ~ prcp + factor(Env), "year", at = list(prcp =  c(5,30,85), Env = c("Ag", "Nat")))
+
+#predictions without habitat
+lsm <- lsmip(lm.res.env,  ~ year + prcp, plot=F,
+            at = list(year = c(1880,1950,2005), prcp = c(50,850)))
+#slope values without habitat
+emt <- emtrends(lm.res.env, ~ prcp, "year", at = list(prcp =  c(50 ,850)))
+
+#slope for latitude
+emt <- emtrends(lm.res.env, ~ year, "samp_lat", at = list(year = c(1950, 2000)))
+
+```
+
+
+
+
+## Climate plots
+```{r climate_plots}
+
+#Make color palette based on precipitation values and color scheme
+n <- length(climate$sample)
+prcp_palette <- grDevices::colorRamp(c("#de2d26", "#67a9cf"))( (1:n)/n )
+prcp_col <- color_values(climate_long$prcp, palette = prcp_palette) #dry #wet
+
+
+#Precipitation plot
+pdf(file=paste("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/5.herbarium/Figure5_prcp.pdf", sep="" ), bg = "transparent", width=8, height=2.5, family = "Times New Roman")
+
+par(family= "Times New Roman", cex.axis = 1, cex.lab = 1.5)
+plot(climate_long$year, climate_long$prcp, pch = 16, ylab = "Growing season cumulative precipitation (mm)",
+     xaxt = "n", yaxt = "n", ylim = c(0,900),
+     bty = "n", col = prcp_col, xlab = "", xlim = c(1885,2010))
+axis(1, pos = 2, at = seq(1880,2020,by=20))
+axis(2, pos = 1880, at = seq(0,1000,by=250), ylim = c(-2,1000))
+
+
+dev.off()
+
+
+
+#Temperature plot
+pdf(file=paste("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/5.herbarium/Figure5_tmax.pdf", sep="" ), bg = "transparent", width=8, height=2.5, family = "Times New Roman")
+
+par(family= "Times New Roman", cex.axis = 1, cex.lab = 1.5)
+plot(climate_long$year, climate_long$tmax, pch = 16, ylab = "Growing season max. temp. (°C)",
+     xaxt = "n", yaxt = "n", 
+     bty = "n", col = "black", xlab = "", ylim = c(25,45), xlim = c(1885,2010))
+axis(1, pos = 24, at = seq(1880,2020,by=20))
+axis(2, pos = 1880, at = seq(0,45,by=5))
+
+dev.off()
+
+```
+
+
+
+```{r correlation_mat}
+library(corrplot)
+library(psych)
+
+long <- climate_long
+colnames(long) <- c("sample", "year", "latitude", "longitude", "dist", 
+                        "prcp", "tmax", "habitat", "Year", "env_mod", "variable", "value")
+
+long$habitat[long$habitat == "Ag"] <- 1 #Ag is 1
+long$habitat[long$habitat == "Nat"] <- 0 #Nat is 0
+long$habitat[long$habitat=="Dist"] <- NA
+long$habitat <- as.numeric(long$habitat)
+#correlation matrix of the covariates
+cormat <- cor(long[,c(2:4,6,8,10)], method = "pearson", use = "complete.obs")
+#pvalmat <- corr.test(long[,c(2:4,6,8,10)])$p #, method = "pearson", use = "complete.obs")
+cormat
+
+#visualize (change names for better plot)
+
+pdf(file=paste("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/5.herbarium/corr_mat", sep="" ), bg = "transparent", width=5, height=4, family = "Times New Roman")
+
+par(family = "Times New Roman")
+corrplot(cormat, type = "upper", order = "hclust",  tl.col = "black", tl.srt = 45,  diag = FALSE) #insig = "p-value", sig.level= -0.1, p.mat = pvalmat,
+
+dev.off()
+
+```
+
+
+
+# (6) Logistic model on long format dataset 
+## Without env
+
+```{r logistic_multiple_regression}
+
+log.res <- glm(data = climate_long, 
+             value ~ tmax*year + prcp*year  + variable + samp_lat + samp_lon,
+             family = "binomial")
+summary(log.res)
+Anova(log.res, type = "III")
+
+#slope values
+emt <- emtrends(log.res, ~ tmax , "year", at = list(tmax =  c(25,45)))
+
+emt <- emtrends(log.res, ~ tmax + prcp, "year", at = list(tmax =  c(25,45), prcp = c(50,850)))
+
+ # tmax year.trend      SE  df asymp.LCL asymp.UCL
+ #   25    -0.0199 0.00809 Inf  -0.03580  -0.00408
+ #   45     0.0140 0.00814 Inf  -0.00196   0.02993
+#to multiply by 2 fo homozygote genotype values
+0.00814*2 #0.01628
+0.00809*2
+```
+## With environment
+
+```{r logistic_multiple_regression}
+
+log.res <- glm(data = climate_long, 
+             value ~ tmax*year + prcp*year+ variable + samp_lat + samp_lon + Env*year,
+             family = "binomial")
+summary(log.res)
+Anova(log.res, type = "III")
+
+#slope values
+emt <- summary(emtrends(log.res, ~ prcp + year, "year", at = list(prcp =  c(50,275,850))))
+
+# at 50 : 0.00729*2=0.01458 SD = 0.00519*2 = 0.01038
+# at 275 : 0.00145*2=0.0029
+# at 850 : -0.01345*2=-0.0269 SD = 0.00923*2 = 0.01846
+```
+
+Model results align with results from linear regression model, but we can extract the selection coefficients that are more easily interpretative. 
+
+# (7) Plot
+
+## Plot without logistic fit
+```{r interaction_plot}
+
+pdf(file=paste("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/5.herbarium/Figure5_B.pdf", sep="" ), bg = "transparent", width=8, height=4.5, family = "Times New Roman")
+
+par(family= "Times New Roman", cex.axis = 1, cex.lab = 1.5)
+#build my color palette
+n <- length(climate$sample)
+prcp_palette <- grDevices::colorRamp(c("#de2d26", "#67a9cf"))( (1:n)/n )
+prcp_col <- color_values(c(50,275,850), palette = prcp_palette) #dry #wet
+
+#Plot for linear predictions of precipitation
+#predictions without habitat
+lsm <- lsmip(lm.res.env,  ~ year + prcp, plot=F,
+            at = list(year = c(1880,1950,2005), prcp = c(50,275,850)))
+
+plot(lsm$year[c(1,2,3)], lsm$yvar[c(1,2,3)], type = "l", col = prcp_col[1], lwd = 2,
+     xlab = "Year", ylab = "Predicted drought allele fq.", ylim = c(-0.1,1.1), lty = 1, c(1880,2011))
+
+#Add where the herbarium sampling happened
+jitter <- sample(seq(-0.05,0.05,by=0.01),dim(climate)[1], replace = T)
+for (samp in 1:dim(climate)[1]) {
+  points(rep(climate$year[samp], length(climate[samp,c(7:40)])), climate[samp,c(7:40)]+jitter[samp], pch = 16, col = scales::alpha("gray", 0.5), cex = 1)
+}
+
+# DRY
+ #make polygon where coordinates start with lower limit and 
+ # then upper limit in reverse order
+polygon(c(lsm$year[c(1,2,3)],rev(lsm$year[c(1,2,3)])),
+         c(lsm$yvar[c(1,2,3)]+lsm$SE[c(1,2,3)],rev(lsm$yvar[c(1,2,3)]-lsm$SE[c(1,2,3)])),
+         col = scales::alpha(prcp_col[1], 0.3), border = FALSE)
+lines(lsm$year[c(1,2,3)], lsm$yvar[c(1,2,3)], type = "l", col = prcp_col[1], lwd =2,
+     xlab = "Year", ylab = "Linear prediction", ylim = c(0,1), lty = 1)
+ 
+# MEAN
+polygon(c(lsm$year[c(4,5,6)],rev(lsm$year[c(4,5,6)])),
+         c(lsm$yvar[c(4,5,6)]+lsm$SE[c(4,5,6)],rev(lsm$yvar[c(4,5,6)]-lsm$SE[c(4,5,6)])),
+         col = scales::alpha(prcp_col[2], 0.3), border = FALSE)
+lines(lsm$year[c(4,5,6)], lsm$yvar[c(4,5,6)], col = prcp_col[2], lwd = 2, lty = 1)
+
+# WET
+polygon(c(lsm$year[c(7,8,9)],rev(lsm$year[c(7,8,9)])),
+         c(lsm$yvar[c(7,8,9)]+lsm$SE[c(7,8,9)],rev(lsm$yvar[c(7,8,9)]-lsm$SE[c(7,8,9)])),
+         col = scales::alpha(prcp_col[3], 0.3), border = FALSE)
+lines(lsm$year[c(7,8,9)], lsm$yvar[c(7,8,9)], col = prcp_col[3], lwd = 2, lty = 1)
+
+
+#add the selection coefficients
+em <- emtrends(lm.res.env,  ~ year + prcp, "year",
+            at = list( prcp = c(50,275,850)))
+
+text(1900,0.3, "s = 0.015 [+- ]", col = prcp_col[1])
+text(1980,0.8, "s = -0.027", col = prcp_col[3])
+
+
+dev.off()
+
+pdf(file=paste("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/5.herbarium/Legend_F5D.pdf", sep="" ), bg = "transparent", width=3, height=4, family = "Times New Roman")
+
+par(family= "Times New Roman", cex.axis = 1, cex.lab = 1.5)
+
+#Export legend for precipitation
+lg <- color_values(c(50:850), palette = prcp_palette)
+legend_image <- as.raster(matrix(lg , ncol=1))
+plot(c(0,2),c(0,1),type = 'n', axes = F,xlab = '', ylab = '', main = 'Total precipitation')
+text(x=1.5, y = seq(0,1), labels = c("50 mm","850 mm"))
+rasterImage(rev(legend_image), 0, 0, 1,1)
+
+dev.off()
+```
+
+## Plot with logistic fit
+```{r mean_interaction_graph}
+
+# pdf(file=paste("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/5.herbarium/Figure5_B.pdf", sep="" ), bg = "transparent", width=8, height=4.5, family = "Times New Roman")
+
+par(family= "Times New Roman", cex.axis = 1, cex.lab = 1.5)
+#build my color palette
+n <- length(climate$sample)
+prcp_palette <- grDevices::colorRamp(c("#de2d26", "#67a9cf"))( (1:n)/n )
+prcp_palette_log <- grDevices::colorRamp(c("#df65b0", "#756bb1"))( (1:n)/n )
+prcp_col <- color_values(c(50,850), palette = prcp_palette) #dry #wet
+prcp_col_log <- color_values(c(50,850), palette = prcp_palette_log) #dry #wet
+#"#DA2F28FF" "#1C9099FF"
+
+#Plot for linear predictions of precipitation
+#predictions without habitat
+lsm <- lsmip(lm.res.env,  ~ year + prcp, plot=F,
+            at = list(year = c(1880,1950,2005), prcp = c(50,850)))
+
+plot(lsm$year[c(1,2,3)], lsm$yvar[c(1,2,3)], type = "l", col = prcp_col[1], lwd = 2,
+     xlab = "Year", ylab = "Linear prediction", ylim = c(-0.1,1.1), lty = 1, c(1880,2011))
+
+#Add where the herbarium sampling happened
+jitter <- sample(seq(-0.05,0.05,by=0.01),dim(climate)[1], replace = T)
+for (samp in 1:dim(climate)[1]) {
+  points(rep(climate$year[samp], length(climate[samp,c(7:40)])), climate[samp,c(7:40)]+jitter[samp], pch = 16, col = scales::alpha("gray", 0.5), cex = 1)
+}
+
+# DRY
+ #make polygon where coordinates start with lower limit and 
+ # then upper limit in reverse order
+polygon(c(lsm$year[c(1,2,3)],rev(lsm$year[c(1,2,3)])),
+         c(lsm$yvar[c(1,2,3)]+lsm$SE[c(1,2,3)],rev(lsm$yvar[c(1,2,3)]-lsm$SE[c(1,2,3)])),
+         col = scales::alpha(prcp_col[1], 0.3), border = FALSE)
+lines(lsm$year[c(1,2,3)], lsm$yvar[c(1,2,3)], type = "l", col = prcp_col[1], lwd =2,
+     xlab = "Year", ylab = "Linear prediction", ylim = c(0,1), lty = 1)
+ 
+# WET
+polygon(c(lsm$year[c(4,5,6)],rev(lsm$year[c(4,5,6)])),
+         c(lsm$yvar[c(4,5,6)]+lsm$SE[c(4,5,6)],rev(lsm$yvar[c(4,5,6)]-lsm$SE[c(4,5,6)])),
+         col = scales::alpha(prcp_col[2], 0.3), border = FALSE)
+lines(lsm$year[c(4,5,6)], lsm$yvar[c(4,5,6)], col = prcp_col[2], lwd = 2, lty = 1)
+
+
+# legend("bottomright", legend = c("min. prcp", "mean prcp","max. prcp","Ag","Nat"), col = c(prcp_col,"black", "black")
+#        , bty = "n", lty = c(1,1,1,2,1), lwd = 2, title = "Tot. precip.      Habitat", cex = 0.8, border=F, ncol=2)
+#-------------------------------------------------
+#Plot for logistic predictions of precipitation
+#-------------------------------------------------
+#predictions without habitat
+lsm <- lsmip(log.res,  ~ year + prcp, plot=F,
+            at = list(year = c(1880,1950,2005), prcp = c(50,850)))
+
+# DRY
+ #make polygon where coordinates start with lower limit and 
+ # then upper limit in reverse order
+polygon(c(lsm$year[c(1,2,3)],rev(lsm$year[c(1,2,3)])),
+         c(lsm$yvar[c(1,2,3)]+lsm$SE[c(1,2,3)],rev(lsm$yvar[c(1,2,3)]-lsm$SE[c(1,2,3)])),
+         col = scales::alpha(prcp_col[1], 0.3), border = FALSE)
+lines(lsm$year[c(1,2,3)], lsm$yvar[c(1,2,3)], type = "l", col = prcp_col[1], lwd =2,
+     xlab = "Year", ylab = "Linear prediction", ylim = c(0,1), lty = 2)
+ 
+# WET
+polygon(c(lsm$year[c(4,5,6)],rev(lsm$year[c(4,5,6)])),
+         c(lsm$yvar[c(4,5,6)]-lsm$SE[c(4,5,6)],rev(lsm$yvar[c(4,5,6)]+lsm$SE[c(4,5,6)])),
+         col = scales::alpha(prcp_col[2], 0.3), border = FALSE)
+lines(lsm$year[c(4,5,6)], lsm$yvar[c(4,5,6)], col = prcp_col[2], lwd = 2, lty = 2)
+
+
+
+
+#dev.off()
+
+```
+
+
+
+
+
+
+

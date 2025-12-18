@@ -1,0 +1,387 @@
+---
+title: "Extract the climate data at the herbarium samples locations from 1828 to 2011"
+output: html_document
+date: "2025-02-25"
+---
+
+Until now I was only working with data going back to 1940 because of the limitation of the dataset. 
+Here I am using another climate dataset source (https://www.ncei.noaa.gov/pub/data/ghcn/daily/by_year/) to extract the climate data at each site and each year. 
+
+```{r libraries, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+rm(list= ls())
+
+library(RColorBrewer)
+library(data.table)
+library(reshape2)
+library(plot.matrix)
+library(extrafont)
+library(FactoMineR)
+library("factoextra")
+library(lattice)
+library(RColorBrewer)
+library(CFtime)
+library(geosphere)
+library(dplyr)
+
+```
+
+
+
+
+#Upload datasets
+```{r}
+meta <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/metadata_SNP_order.txt", 
+                   sep = "\t", header = T)
+
+#NOAA climate stations all over the world #station metadata from https://www.ncei.noaa.gov/access/homr/
+stations <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/weather_stations_ghcnd_coop.txt", sep = "\t", header = T)
+
+
+
+#filter the stations dataset to only keep the ones that are in the US/Canada
+stations_fil <- stations[c(stations$lat > 30 & stations$lat< 50 &
+        stations$lon > -100 & stations$lon < -65 ), ] #93147 x 3
+
+
+
+```
+
+
+Step (1) : compare our coordinate to the weather station coordinates. Find the closest weather station.
+Step (2) : upload data for year and location
+Step (3) : correlate
+
+For each year, find the closest weather station to the sample.
+Each year dataset does not always have the station that is the closest to the sample.
+So I first have to find the closest station for each year, then extract the climate data.
+
+() Units
+      PRCP = Precipitation (tenths of mm)
+   	  SNOW = Snowfall (mm)
+	    SNWD = Snow depth (mm)
+      TMAX = Maximum temperature (tenths of degrees C)
+      TMIN = Minimum temperature (tenths of degrees C)
+                 
+
+
+Julia noticed a problem, where we have a few missing data for more recent years for temperature that should not be missing. 
+```{r closest_weather_station_per_year, eval=FALSE, include=FALSE}
+
+weather <- cbind("station", "date", "var", "value", "lat", "lon", "dist", "year", "sample", "samp_lon", "samp_lat")
+write.table(weather, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/climate_NOAA_1960_1980.txt", sep = "\t",
+              col.names = F, row.names = F, quote = F)
+
+station_number <- c()
+
+for (y in 2001) { #unique(meta$Year)
+
+  #print year of current sample
+  print(y)
+
+  #record idx
+  idx <- which(meta$Year == y)
+
+  #open corresponding file
+  setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/9.climate_data/NOAA/")
+  cur <- read.table(paste(y,".csv.gz", sep = ""), sep = ",", header = F)
+  cur <- cur[,1:4]
+  colnames(cur) <- c("station", "date", "var",  "value")
+
+  #merge datasets
+  dt <- merge(cur, stations_fil, by = "station")
+
+  #calculate number of stations for that year
+  station_list <- sort(unique(dt$station))
+  cur_station_nb <- length(station_list)
+  station_number <- c(station_number, cur_station_nb )
+
+  if ( cur_station_nb == 0) {next}
+
+  #closest station
+
+  for (i in idx) { #if several stations have the same year
+
+      dist <- matrix(NA, 1, cur_station_nb)
+
+      for (s in 1:cur_station_nb) {
+          cur_station <- station_list[s] #current station name
+
+          #calculate euclidean distance and keep the smallest
+          dist[s] <- distVincentyEllipsoid(c(dt$lon[dt$station==cur_station][1], dt$lat[dt$station==cur_station][1]),   c(meta$Long[i], meta$Lat[i]) )/1000
+
+      }
+      idx_closest_station <- which(min(dist, na.rm=T) == dist)[1] #closest station in km
+      name_closest_station <- station_list[idx_closest_station]
+
+      weather <- dt[dt$station == name_closest_station,]
+      if (dim(weather)[1] > 1) {
+          weather$dist <- min(dist)
+          weather$year <- meta$Year[i]
+          weather$samp <- meta$Sample[i]
+          weather$long_samp <- meta$Long[i]
+          weather$lat_samp <- meta$Lat[i]
+      }
+
+      #build file
+      write.table(weather, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/climate_NOAA_2001.txt",
+                  sep = "\t", append = T, col.names = F, row.names = F, quote = F)
+    }
+
+}
+
+
+```
+
+Troubleshooting
+```{r troubleshooting}
+
+
+
+```
+
+
+
+# Upload datasets for years 1828-1948
+```{r upload_data}
+rm(list= ls())
+weather <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/54samples/climate_NOAA.txt", sep = "\t", header = T)
+summary(weather)
+
+```
+
+
+
+
+```{r quick_plots}
+
+#distance between sample and station/year
+par(family = "Times New Roman", cex.lab = 1.5, cex.axis = 1.5)
+plot(weather$year, weather$dist, pch = 16, 
+     ylab = "Distance sample-station (km)", xlab = "Year")
+
+unique(sort(weather$year))
+
+summary(weather$dist)
+
+
+```
+
+
+
+
+```{r some_stats}
+#take the mean for each year
+weather_mean_per_year <- weather %>% 
+  group_by(year, station, var, sample, dist, lat, lon, samp_lat, samp_lon) %>%
+  summarise(mean = mean(value))
+#!!! this is the mean per year - take the mean for the summer months later !
+
+```
+
+to do (1) select distances that are less than 50 km
+(2) extract weather data for the summer
+
+# Extracting summer weather data
+
+```{r select_stations_and_summer}
+weather_fil <- weather[weather$dist<=50,]
+
+#how many samples are left?
+length(unique(sort(weather$sample))) #104
+length(unique(sort(weather_fil$sample))) #95
+
+
+#split date column into three chunks and grab the second chunk
+weather_fil <- transform(weather_fil, month=substr(date, 5, 6))
+#keep the 06 07 08 months
+weather_summer <- weather_fil[weather_fil$month %in% c("06", "07", "08"),] # 41562    12
+
+#keep only precipitation and temperature data
+weather_summer_tmax <- weather_summer[weather_summer$var == "TMAX",]
+weather_summer_pcrp <- weather_summer[weather_summer$var == "PRCP",]
+
+
+#precipitation dataset
+#summarize by taking the sum for the whole summer (this might be noisy because dependent on the frequency of measurements)
+sum_summer_pcrp <- weather_summer_pcrp %>%
+  group_by(sample, year, samp_lat, samp_lon, dist) %>%
+  summarise(prcp = sum(value)/10) #in mm
+
+
+#max temperature dataset
+#summarize by taking the max for the whole summer 
+tmax_summer <- weather_summer_tmax %>%
+  group_by(sample, year, samp_lat, samp_lon, dist) %>%
+  summarise(tmax = max(value)/10) #in C
+
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/5.herbarium/")
+pdf("climate_year.pdf", 
+    bg = "white", width=10, height=4, family = "Times New Roman")
+
+#quick plot
+par(family = "Times New Roman", mfrow =c(1,2))
+plot(tmax_summer$year, tmax_summer$tmax, pch = 16, xlab = "Year", ylab = "Max temperature (C)")
+
+plot(sum_summer_pcrp$year, sum_summer_pcrp$prcp/10, pch = 16, xlab = "Year", ylab = "Total precipitation (mm)")
+
+dev.off()
+```
+We keep 95 out of 104 samples when selecting samples within a 50km radius of the closest weather station. 
+
+Where are my samples on the map ?
+
+# Map the samples in space
+
+```{r map}
+#plot stations and samples
+library(leaflet)
+
+#summarize 
+weather_mean_per_year <- weather_fil %>% 
+  group_by(year, station, var, sample, dist, lat, lon, samp_lat, samp_lon) %>%
+  summarise(mean = mean(value))
+#!!! this is the mean per year - take the mean for the summer months later !
+weather_mean_per_year_fil <-weather_mean_per_year[weather_mean_per_year$year>=1880,]
+weather_mean_per_year_fil$cols <- colour_values(weather_mean_per_year_fil$year, palette = "magma")
+
+
+m <- leaflet() %>%
+  addProviderTiles(providers$CartoDB.Positron)  %>% 
+  setView(lng = min(weather_mean_per_year_fil$lon, na.rm=T), lat = min(weather_mean_per_year_fil$lat, na.rm=T), zoom = 6)
+m <- addCircleMarkers(m, lng = weather_mean_per_year_fil$lon, lat = weather_mean_per_year_fil$lat, weight = 3 , 
+                      color = weather_mean_per_year_fil$cols, fill = TRUE, fillColor = weather_mean_per_year_fil$cols, 
+                      radius = 5, opacity = 1,   fillOpacity = 1) 
+m <- addCircleMarkers(m, lng = weather_mean_per_year_fil$samp_lon, lat = weather_mean_per_year_fil$samp_lat, weight = 2 , 
+                      color = "#02818a", fill = TRUE, fillColor = "#02818a", 
+                      radius = 3.5, opacity = 1,   fillOpacity = 1) 
+m <- addScaleBar(m, position = c( "bottomleft"), options = scaleBarOptions(imperial = FALSE))
+
+m
+
+
+```
+
+
+
+
+# Ancestry matrix
+Turn vcf genotypes to 0,1 and 2. <br>
+
+
+```{r calculate_ancestry_matrix}
+
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/8.ancestry_hmm/1.results_herbarium/trajectories")
+genotype <- read.table("anc_calls_herbarium_34sites_GT.txt")
+samp_order <- as.matrix(read.table("samp_order_HB0.txt"))#sample order from the GT file
+colnames(samp_order) <- "Sample"
+gt <- genotype[,-c(1:4)]
+chrom_pos <- genotype[,c(1:2)]
+colnames(chrom_pos) <- c("chrom", "pos")
+
+#load times
+time <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/herbarium_samps_HB0_simplified.txt", sep = "\t", header = T)
+
+#order phenos based on sample order
+time_ordered <- merge(time, samp_order,  by = "Sample", sort = F)
+
+
+#metrics
+n_samp <- dim(gt)[2]
+n_snp <- dim(gt)[1]
+tub_col <- "#76528BFF"
+rud_col <- "#CBCE91FF"
+
+
+snp <- matrix(NA, n_snp, n_samp) #33 x 108
+
+for (x in 1:n_snp) {
+  
+  for (y in 1:n_samp) {
+    
+    if (gt[x,y] == "0|0") {snp[x,y] <- 0} #homs reference
+    if (gt[x,y] == "0|1" | gt[x,y] == "1|0" ) {snp[x,y] <- 1} #hets
+    if (gt[x,y] == "1|1") {snp[x,y] <- 2} #homs alternative
+    if (gt[x,y] == "./.") {snp[x,y] <- NA} #NA
+    
+  }
+}
+
+#order sample by year
+time_ordered_by_time <- time_ordered[order(time_ordered$Year), ] #order time table
+snp_ordered_by_time <- t(snp[,order(time_ordered$Year)])#order snp table
+
+```
+
+# Final files (for now)
+
+These files contain the sample info, year and location, and their genotype for each 34 drought adapted loci.
+```{r final_files}
+#merge SNP info and genotypes for selecting the right individuals at the next step
+snp_full <- cbind(samp_order, t(snp) )
+rain_full <- merge(rain_dt_sum, snp_full, by = "Sample")
+tpmax_full <- merge(maxtp_dt_final, snp_full, by = "Sample")
+
+#export files
+write.table(tpmax_full, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/climate_GT/temp_max_herb.txt", sep = "\t", col.names = T, row.names = F, quote = F)
+
+write.table(rain_full, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/climate_GT/precipitation_herb.txt", sep = "\t", col.names = T, row.names = F, quote = F)
+
+write.table(snp_full, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/climate_GT/herb_GT_drought_loci.txt", sep = "\t", col.names = T, row.names = F, quote = F)
+
+```
+
+# Regression tests ! Is there any significant relationship between genotype and temperature?
+
+
+```{r get_coefficients}
+#independent estimate of s 
+store_s <- matrix(NA, n_snp, 6)
+counter <- 1
+
+for (n in 6:(n_snp+5)) {
+  
+  #check that there is enough data
+  if ( length(which(is.na(rain_full[,n]) == T)) > 20 | length(which(is.na(tpmax_full[,n]) == T)) > 20 ) {
+    counter <- counter + 1}
+  else {
+  
+  #logistic regression for each snp separately - RAIN
+  lg <- glm(data=rain_full, as.numeric(rain_full[,n])/2 ~ rain_full$year, family="binomial")
+  
+  #store s and se
+  store_s[counter,1] <- summary(lg)$coefficients[, 1][2]
+  store_s[counter,2] <- summary(lg)$coefficients[, 2][2]
+  store_s[counter,3] <- summary(lg)$coefficients[, 4][2]
+  
+  #logistic regression for each snp separately - TMP
+  lg <- glm(data=tpmax_full, as.numeric(tpmax_full[,n])/2 ~ tpmax_full$year, family="binomial")
+  
+  #store s and se
+  store_s[counter,4] <- summary(lg)$coefficients[, 1][2]
+  store_s[counter,5] <- summary(lg)$coefficients[, 2][2]
+  store_s[counter,6] <- summary(lg)$coefficients[, 4][2]
+  
+  counter <- counter + 1
+    
+  }
+
+}
+colnames(store_s) <- c("coef_rain", "std_err_rain", "pval_rain", "coef_tmp", "std_err_tmp", "pval_tmp")
+summary(store_s)
+#using "quasibinomial" suppresses the warning but also changes the standard error estimation 
+par(family = "Times New Roman")
+hist(store_s[,1], 20, xlab = "Selection coefficient", main = "Rain (no significant regression)")
+```
+(1) do the same thing but by combining the weather data from 1880 to current
+
+(2) do all the other analyses that we mentioned last time.
+
+
+
+
+
+
+
+
+
