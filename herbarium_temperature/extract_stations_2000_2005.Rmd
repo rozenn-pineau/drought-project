@@ -1,0 +1,150 @@
+---
+title: "Extract the climate data at the herbarium samples locations from 1828 to 2011"
+output: html_document
+date: "2025-02-25"
+---
+
+Until now I was only working with data going back to 1940 because of the limitation of the dataset. 
+Here I am using another climate dataset source (https://www.ncei.noaa.gov/pub/data/ghcn/daily/by_year/) to extract the climate data at each site and each year. 
+
+```{r libraries, include=FALSE}
+
+rm(list= ls())
+
+library(RColorBrewer)
+library(data.table)
+library(reshape2)
+library(plot.matrix)
+library(extrafont)
+library(FactoMineR)
+library("factoextra")
+library(lattice)
+library(RColorBrewer)
+library(CFtime)
+library(geosphere)
+library(dplyr)
+
+```
+
+
+
+
+#Upload datasets
+```{r}
+meta <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/metadata_SNP_order.txt", 
+                   sep = "\t", header = T)
+
+#NOAA climate stations all over the world #station metadata from https://www.ncei.noaa.gov/access/homr/
+stations <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/weather_stations_ghcnd_coop.txt", sep = "\t", header = T)
+
+
+#filter the stations dataset to only keep the ones that are in the US/Canada
+stations_fil <- stations[c(stations$lat > 30 & stations$lat< 50 &
+        stations$lon > -100 & stations$lon < -65 ), ] #93147 x 3
+
+```
+
+
+Step (1) : compare our coordinate to the weather station coordinates. Find the closest weather station.
+Step (2) : upload data for year and location
+Step (3) : correlate
+
+For each year, find the closest weather station to the sample.
+Each year dataset does not always have the station that is the closest to the sample.
+So I first have to find the closest station for each year, then extract the climate data.
+
+() Units
+      PRCP = Precipitation (tenths of mm)
+   	  SNOW = Snowfall (mm)
+	    SNWD = Snow depth (mm)
+      TMAX = Maximum temperature (tenths of degrees C)
+      TMIN = Minimum temperature (tenths of degrees C)
+                 
+
+
+Julia noticed a problem, where we have a few missing data for more recent years for temperature that should not be missing.
+
+```{r closest_weather_station_per_year, eval=FALSE, include=FALSE}
+weather <- cbind("station", "date", "var", "value", "lat", "lon", "dist", "year", "sample", "samp_lon", "samp_lat")
+write.table(weather, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/climate_datasets/temperature/climate_NOAA_2000_2005.txt", sep = "\t",
+              col.names = F, row.names = F, quote = F)
+
+
+station_number <- c()
+years <- unique(meta$Year)[unique(meta$Year) >= 2000 & unique(meta$Year) < 2005]
+
+for (y in years) { #unique(meta$Year)
+
+  #print year of current sample
+  print(y)
+
+  #record idx
+  idx <- which(meta$Year == y)
+
+  #open corresponding file
+  setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/9.climate_data/NOAA/")
+  cur <- read.table(paste(y,".csv.gz", sep = ""), sep = ",", header = F)
+  cur <- cur[,1:4]
+  colnames(cur) <- c("station", "date", "var",  "value")
+
+  #merge datasets
+  dt <- merge(cur, stations_fil, by = "station")
+
+  #calculate number of stations for that year
+  station_list <- sort(unique(dt$station))
+  cur_station_nb <- length(station_list)
+  station_number <- c(station_number, cur_station_nb )
+
+  if ( cur_station_nb == 0) {next}
+
+  #closest station
+
+  for (i in idx) { #if several stations have the same year
+
+      dist <- matrix(NA, 1, cur_station_nb)
+
+      for (s in 1:cur_station_nb) {
+          cur_station <- station_list[s] #current station name
+
+          #calculate euclidean distance and keep the smallest
+          dist[s] <- distVincentyEllipsoid(c(dt$lon[dt$station==cur_station][1], dt$lat[dt$station==cur_station][1]),   c(meta$Long[i], meta$Lat[i]) )/1000
+
+      }
+      
+      
+      #loop through stations under 50km
+      order_stations <- order(dist <= 50) #indexes of distances from minimum to maximum
+      idx_stations_50k <-  which(dist <= 50)
+      #order by distance --> check : dist[idx_stations_50k[order(dist[idx_stations_50k])]] 
+      for (station in idx_stations_50k[order(dist[idx_stations_50k])]) {
+        
+          name_cur_station <- station_list[station]
+          #Check that there is both temp and prcp data for that station
+          #l_prcp <- length(which(dt[dt$station == name_cur_station,]$var == "PRCP")) #is there precipitation values?
+          l_tmax <- length(which(dt[dt$station == name_cur_station,]$var == "TMAX")) #is there temperature values?
+          
+          if (l_tmax <= 0) {print("Next station")}
+          #go to next one #else if { #if last station has been reached and still no temperature data, take the closest one (I already have that dataset)
+          else { weather <- dt[dt$station == name_cur_station,]
+            if (dim(weather)[1] > 1) {
+                weather$dist <- dist[station]
+                weather$year <- meta$Year[i]
+                weather$samp <- meta$Sample[i]
+                weather$long_samp <- meta$Long[i]
+                weather$lat_samp <- meta$Lat[i]}
+                #build file
+                 write.table(weather, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/climate_datasets/temperature/climate_NOAA_2000_2005.txt",
+                  sep = "\t", append = T, col.names = F, row.names = F, quote = F)
+                  break
+            }
+
+
+    }
+
+  }
+}
+
+
+```
+
+

@@ -1,0 +1,128 @@
+---
+title: "Extract the climate data at the herbarium samples locations from 1828 to 2011"
+output: html_document
+date: "2025-02-25"
+---
+
+Until now I was only working with data going back to 1940 because of the limitation of the dataset. 
+Here I am using another climate dataset source (https://www.ncei.noaa.gov/pub/data/ghcn/daily/by_year/) to extract the climate data at each site and each year. 
+
+```{r libraries, include=FALSE}
+rm(list= ls())
+
+library(RColorBrewer)
+library(data.table)
+library(reshape2)
+library(plot.matrix)
+library(extrafont)
+library("factoextra")
+library(lattice)
+library(dplyr)
+
+```
+
+
+# Upload and clean datasets for climate
+
+```{r}
+#weather per month for all stations
+weather <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/climate_datasets/temperature/final/climate_NOAA_temperature_1940_2011.txt", sep = "\t", header = T)
+summary(weather)
+for (i in c(4:8,10:11)) {
+weather[,i] <- as.numeric(weather[,i])
+}
+
+# Upload haplotype frequency info
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/genotypes/")
+genotype <- read.table("anc_calls_herbarium_33sites_GT.txt")
+samp_order <- as.matrix(read.table("samp_order_HB0.txt")) #sample order from the GT file
+colnames(samp_order) <- "Sample"
+gt <- genotype[,-c(1:4)] #33 x 108
+chrom_pos <- genotype[,c(1:2)]
+colnames(chrom_pos) <- c("chrom", "pos")
+
+#load times: this is the dates corresponding to the herbarium samples
+time <- read.table("herbarium_samps_HB0_simplified.txt", sep = "\t", header = T)
+
+#order time based on GT sample order
+time_ordered <- merge(time, samp_order,  by = "Sample", sort = F) #now the time dataset and the genotype datasets have the same order
+
+
+```
+
+# Calculate ancestry from genotype
+
+```{r calculate_ancestry_matrix}
+n_snp <- 33
+n_samp <- 108
+snp <- matrix(NA, n_snp, n_samp) #33 x 108
+
+for (x in 1:n_snp) {
+  
+  for (y in 1:n_samp) {
+    
+    if (gt[x,y] == "0|0") {snp[x,y] <- 0} #homs reference
+    if (gt[x,y] == "0|1" | gt[x,y] == "1|0" ) {snp[x,y] <- 0.5} #hets
+    if (gt[x,y] == "1|1") {snp[x,y] <- 1} #homs alternative
+    if (gt[x,y] == "./.") {snp[x,y] <- NA} #NA
+    
+  }
+}
+
+#order sample by year
+time_ordered_by_time <- time_ordered[order(time_ordered$Year), ] #order time table
+snp_ordered_by_time <- t(snp[,order(time_ordered$Year)]) #order snp table in same order as time dataset
+
+full <- data.frame(sample = time_ordered_by_time$Sample, site = snp_ordered_by_time)
+
+
+#clear space
+rm(genotype, gt, time, time_ordered_by_time,x,y)
+```
+
+# Extracting summer weather data
+
+(1) select distances that are less than 50 km
+(2) extract weather data for the summer
+
+
+```{r select_stations_and_summer}
+#only keep samples that are less than 50km apart from a weather station
+summary(weather$dist) #all distances < 30km
+
+#how many samples?
+length(unique(sort(weather$sample))) #58
+
+#split date column into three chunks and grab the second chunk
+weather <- transform(weather, month=substr(date, 5, 6))
+#keep the 06 07 08 months
+weather_summer <- weather[weather$month %in% c("06", "07", "08"),] # 41562    12
+
+#keep temperature data
+weather_summer_tmax <- weather_summer[weather_summer$var == "TMAX",]
+
+#max temperature dataset
+#summarize by taking the max for the whole summer 
+tmax_summer <- weather_summer_tmax %>%
+  group_by(sample, year, samp_lat, samp_lon, dist) %>%
+  summarise(tmax = max(as.numeric(value), na.rm=T)/10) #in C
+
+#quick plot
+par(family = "Times New Roman")
+plot(tmax_summer$year, tmax_summer$tmax, pch = 16, xlab = "Year", ylab = "Max temp.") #80 x 6
+
+
+```
+
+# Merge climate and haplotype data
+
+```{r}
+#for temperature
+tmax <- merge(tmax_summer, full, by = "sample") #55 x 39
+
+# export 
+write.table(tmax, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/genotype_climate_merged/tmax/tmax_NOAA.txt", sep = "\t", col.names = T, row.names = F, quote = F)
+
+```
+
+
