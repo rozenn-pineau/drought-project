@@ -18,6 +18,8 @@ Scripts and analyses for the drought paper.
 
 - Ancestry mapping using ancestry hmm on the contemporary dataset
 - Admixture mapping
+- Clumping of drought-associated loci
+- Comparison with CMH scan
   
 [Figure 4 analyses](#Figure-4-analyses)
 
