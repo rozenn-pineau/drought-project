@@ -30,9 +30,6 @@ Scripts and analyses for the drought paper.
 - Climate-genotype assocations
 
   
-[Figure 6 analyses](#Figure-6-analyses)
-
-
 # Figure 1 analyses
 Drought LD50 calculations, multiple linear regression models and Wilcoxon tests : [figure1_v2.R](https://github.com/rozenn-pineau/drought-project/blob/main/figure1_v2.R) and [Figure1E.Rmd](https://github.com/rozenn-pineau/drought-project/blob/main/Figure1E.Rmd).
 
@@ -1021,7 +1018,7 @@ paste tub_common_974133.allele_counts var_rud.allele_counts ancestry_herb_common
 ### Step (7) : make sample file
 
 
-# Process output from ancestry_hmm
+### Process output from ancestry_hmm
 
 ```
 folder_name=$(basename "$PWD")
