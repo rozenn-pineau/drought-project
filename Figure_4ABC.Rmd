@@ -1,0 +1,739 @@
+---
+title: "Plot allele trajectories through time"
+output: html_document
+date: "2024-10-01"
+---
+
+```{r libraries}
+
+library(RColorBrewer)
+library(data.table)
+library(reshape2)
+library(plot.matrix)
+library(extrafont)
+library(colourvalues)
+library(scales)
+
+rm(list=ls())
+```
+
+
+
+
+#Upload datasets
+```{r setup, include=FALSE}
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/8.ancestry_hmm/1.results/trajectories/")
+genotype <- read.table("drought_adapted_43clumps_GT.txt")
+samp_order <- t(read.table("samp_order.txt")) #sample order from the GT file
+
+levels(as.factor(genotype$V1))
+#upload data
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/10.EPSPS/depths")
+metadata <- read.table("metadata_drought.txt", sep = "\t", header = T)
+#remove outliers
+idx <- c( which(metadata$Label == "P16_Nat_1_T") , which(metadata$Label == "P12_Nat_14_T") ) 
+metadata_fil <- metadata[-idx,] 
+habitat <- data.frame(samp = metadata_fil$Label, habitat = metadata_fil$Env, pair = metadata_fil$Pair)
+#add coordinates !
+
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/8.ancestry_hmm/1.results/trajectories/")
+phenos <- read.table("phenos.txt")
+colnames(phenos) <- c("samp", "fullwilt")
+
+#remove outliers
+idx <- c( which(samp_order == "P16_Nat_1_T") , which(samp_order == "P12_Nat_14_T") ) 
+samp_order_fil <- data.frame(samp = samp_order[-idx])
+
+gt <- genotype[,-c(1:4)]
+gt <- gt[,-c(idx)] #43 x 280
+chrom_pos <- genotype[,c(1:2)]
+
+#order phenos based on sample order
+phenos_ordered <- merge(samp_order_fil, phenos,  by = "samp", sort = F)
+phenos_ordered_2 <- merge(phenos_ordered, habitat,  by = "samp", sort = F)
+phenos_ordered <- phenos_ordered_2
+
+dim(phenos_ordered)
+#metrics
+n_samp <- dim(gt)[2]
+n_snp <- dim(gt)[1]
+n_day <- 20
+
+#10000 random sites
+fq_full <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/8.ancestry_hmm/1.results/trajectories/cmp_to_rdn/anc_call_10000_frequency_all.txt", sep = "\t", header = F)
+
+```
+
+
+
+#Ancestry matrix
+```{r calculate_ancestry_matrix}
+snp <- matrix(NA, n_snp, n_samp) #43 x 280
+
+for (x in 1:n_snp) {
+  
+  for (y in 1:n_samp) {
+    
+    if (gt[x,y] == "0|0") {snp[x,y] <- 0} #homs reference
+    if (gt[x,y] == "0|1" | gt[x,y] == "1|0" ) {snp[x,y] <- 1} #hets
+    if (gt[x,y] == "1|1") {snp[x,y] <- 2} #homs alternative
+    if (gt[x,y] == "./.") {snp[x,y] <- NA} #NA
+    
+  }
+}
+
+
+```
+
+
+
+#calculate survival matrix
+```{r calculate_survival_matrix}
+#matrix with the survival information for each day (y axis) and each individual (x axis)
+survival <- matrix(NA, n_day, n_samp) #43 x 280
+counter <- 1
+
+for (surv_val in phenos_ordered$fullwilt) {
+  
+    survival[,counter] <- c(rep(1, surv_val) , rep(0, n_day-surv_val)) 
+    counter <- counter + 1
+    
+}
+
+```
+
+
+
+#calculate allele frequency
+```{r calculate_allele_frequency}
+#loop day by day
+#check who is alive and if so, which ancestry do they have
+#store daily ancestry frequency
+daily_af <- matrix(NA, n_day, n_snp)
+
+for (day in 1:n_day) {
+  
+  for (mut in 1:n_snp) {
+    
+    af <- c()
+    for (samp in 1:n_samp) {
+      
+      #if alive, count in AF
+      if (survival[day,samp] == 1 & !is.na(snp[mut,samp])) {
+        
+        if (snp[mut,samp] == 0) {af <- c(af, 0)}
+        if (snp[mut,samp] == 1) {af <- c(af, 1)}
+        if (snp[mut,samp] == 2) {af <- c(af, 2)}
+        
+      }
+      
+    
+    }
+    
+    daily_af[day, mut] <- sum(af)/(length(af)*2)
+    
+  }
+  
+}
+dim(daily_af) #20 days times 43 SNPs
+
+
+#Export for generating null script
+write.table(daily_af, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/6.trajectories/af_change/daily_af_43loci.txt", sep = "\t", col.names = F, row.names = F, quote = F)
+```
+
+# Trajectories
+Note: I did not have to stratify by the drought allele, there were already all "drought alleles".
+
+```{r plot_trajectories_together}
+
+#Some stats
+af_change <- daily_af[20,]-daily_af[1,]
+af_change_stats <- summary(af_change) #0.25769
+af_colors <- colour_values(af_change, palette = "reds")
+
+```
+
+### How much of each ancestry by habitat ?
+Is there a difference between genotype and habitat in ancestry calls?
+```{r}
+gtmat <- snp/2
+gtmat_ag <- gtmat[,phenos_ordered$habitat == "Ag"] #43 x 143
+gtmat_nat <- gtmat[,phenos_ordered$habitat == "Nat"]#43 x 137
+
+full_ag <- cbind(phenos_ordered[phenos_ordered$habitat == "Ag",],t(gtmat_ag))
+full_nat <- cbind(phenos_ordered[phenos_ordered$habitat == "Nat",],t(gtmat_nat))
+
+dt <- rbind(full_ag,full_nat)
+write.table(dt, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/8.ancestry_hmm/1.results/43drought_adapted_loci_GT.txt", sep = "\t", 
+            col.names = F, row.names = F, quote = F)
+# plot to visualize the means per site
+par(family = "Times New Roman")
+plot(rowMeans(gtmat_ag, na.rm=T), pch = 16, xlab = "Locus", ylab = "% var. rudis ancestry")
+points(rowMeans(gtmat_nat, na.rm=T), pch = 16, col = "red")
+
+
+#plots from the point of view of the loci
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/8.ancestry_hmm/habitat_differences/ancestry_per_habitat.pdf", 
+    bg = "transparent", width=5, height=4, family = "Times New Roman")
+
+par(family="Times New Roman", cex.lab=1.5, cex.axis=1)
+
+# distributions
+hist(rowMeans(gtmat_ag, na.rm=T), breaks = 10, xlim = c(0,1), xlab = expression(paste("% var. ", italic("rudis"), " ancestry")),
+     main = "")
+hist(rowMeans(gtmat_nat, na.rm=T), breaks = 10, xlim = c(0,1), add = T, col = scales::alpha("red",0.5))
+
+legend("topleft", legend = c("Ag", "Nat"), pch = 15, col = c("gray", scales::alpha("red",0.5)), bty = "n")
+
+dev.off()
+
+#Difference on average between distributions
+mean(rowMeans(gtmat_ag, na.rm=T)) - mean(rowMeans(gtmat_nat, na.rm=T)) #0.1090476
+
+#plot from the poitn of view of the individual
+par(family="Times New Roman", cex.lab=1.5, cex.axis=1)
+
+# distributions
+hist(colMeans(gtmat_ag, na.rm=T), breaks = 40, xlim = c(0,1), xlab = expression(paste("% var. ", italic("rudis"), " ancestry")),
+     main = "")
+hist(colMeans(gtmat_nat, na.rm=T), breaks = 40, xlim = c(0,1), add = T, col = scales::alpha("red",0.5))
+
+legend("topleft", legend = c("Ag", "Nat"), pch = 15, col = c("gray", scales::alpha("red",0.5)), bty = "n")
+
+```
+
+## Compare to genome-wide ancestry
+```{r genome_wide_ancestry_by_habitat}
+# Compare to genome-wide average
+#admixture with habitat information
+
+k2 <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/2.admixture/k2_structure_res.csv", 
+                 sep = ",", header = T)
+#remove outliers
+idx <- c(which(k2$samp== c("P16_Nat_1_T")), which(k2$samp== c("P12_Nat_14_T")) )
+k2_fil <- k2[-idx,]
+k2_ag <- k2_fil[k2_fil$env == "Ag",] #43 x 144
+k2_nat <- k2_fil[k2_fil$env == "Nat",]#43 x 136
+
+#plot 
+
+par(family="Times New Roman", cex.lab=1.5, cex.axis=1)
+
+# distributions
+hist(k2_ag$k2.V1, breaks = 20, xlim = c(0,1), xlab = expression(paste("% var. ", italic("rudis"), " ancestry")),
+     main = "")
+hist(k2_nat$k2.V1, breaks = 20, xlim = c(0,1), add = T, col = scales::alpha("red",0.5))
+
+legend("topleft", legend = c("Ag", "Nat"), pch = 15, col = c("gray", scales::alpha("red",0.5)), bty = "n")
+
+#Double plot
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/8.ancestry_hmm/habitat_differences/ancestry_per_habitat.pdf", 
+    bg = "transparent", width=8, height=4, family = "Times New Roman")
+
+par(mfrow = c(1,2), family="Times New Roman", cex.lab=1.5, cex.axis=1)
+
+# distributions for genome wide ancestry
+hist(k2_ag$k2.V1, breaks = 40, xlim = c(0,1), xlab = expression(paste("% var. ", italic("rudis"), " ancestry")),
+     main = "Genome-wide")
+hist(k2_nat$k2.V1, breaks = 40, xlim = c(0,1), add = T, col = scales::alpha("red",0.5))
+
+# distributions for drought adapted loci
+hist(rowMeans(gtmat_ag, na.rm=T), breaks = 10, xlim = c(0,1), xlab = expression(paste("% var. ", italic("rudis"), " ancestry")),
+     main = "Drought-adapted loci")
+hist(rowMeans(gtmat_nat, na.rm=T), breaks = 10, xlim = c(0,1), add = T, col = scales::alpha("red",0.5))
+
+legend("topleft", legend = c("Ag", "Nat"), pch = 15, col = c("gray", scales::alpha("red",0.5)), bty = "n")
+
+dev.off()
+```
+I am not sure that we can make a direct comparison here because we are comparing individual-level data versus loci-level data!
+```{r linear_models}
+full <- merge(habitat, k2, by = "samp")
+full_2 <- merge(full, phenos_ordered, by = "samp")
+
+#Rudis ancestry at drought ~ pair/env + lat + long
+df <- data.frame(samp = phenos_ordered$samp,
+                 ancestry= rowMeans(gtmat, na.rm=T))
+                 
+#genome-wide ancetsry model
+lmres <- lm(data = k2, k2.V1 ~ pair/env + lat + long)
+summary(lmres)
+#how to analyze nested model ?
+```
+
+## Upload whole genome data and subsample
+```{r}
+all_loci <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/8.ancestry_hmm/1.results/two_pulse_flexible_prop_2_values.txt", sep = "\t", header = T) #786261  x  284
+
+rm <- c(which(colnames(all_loci) == "P16_Nat_1_T") , which(colnames(all_loci) == "P12_Nat_14_T") )
+all_loci_fil <- all_loci[,-rm] #786261  x  282
+
+write.table(all_loci_fil,
+            "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/8.ancestry_hmm/1.results/two_pulse_flexible_prop_2_values_280samps.txt",
+            sep = "\t", col.names = T, row.names = F, quote = F)
+
+tot_loci <- dim(all_loci_fil)[1]
+#Choose 10,000 random loci
+n_perm <- 10000
+sub_loci <- all_loci_fil[sample(tot_loci,n_perm),]
+sub_loci_GT <- sub_loci[,-c(1,2)]/2
+
+#order file to be able to subset by habitat
+samp_order_in_sub <- colnames(all_loci_fil[,-c(1,2)])
+#order habitat by the order in sub
+habitat_ordered <- habitat[match(samp_order_in_sub,habitat$samp),]
+#subset by habitat 
+sub_loci_GT_ag <- sub_loci_GT[,habitat_ordered$habitat=="Ag"] #143
+sub_loci_GT_nat <- sub_loci_GT[,habitat_ordered$habitat=="Nat"] #137
+
+#plots from the point of view of the loci
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/8.ancestry_hmm/habitat_differences/ancestry_per_habitat_genome_wide.pdf", bg = "transparent", width=9, height=4, family = "Times New Roman")
+
+# plot
+par(mfrow=c(1,2), family="Times New Roman", cex.lab=1.5, cex.axis=1)
+
+#drought-adapted loci
+par(family="Times New Roman", cex.lab=1.5, cex.axis=1)
+
+# distributions
+hist(rowMeans(gtmat_ag, na.rm=T), breaks = 10, xlim = c(0,1), xlab = expression(paste("% var. ", italic("rudis"), " ancestry")),
+     main = "Drought-adapted loci (43)")
+hist(rowMeans(gtmat_nat, na.rm=T), breaks = 10, xlim = c(0,1), add = T, col = scales::alpha("red",0.5))
+
+legend("topleft", legend = c("Ag", "Nat"), pch = 15, col = c("gray", scales::alpha("red",0.5)), bty = "n")
+
+
+# distributions
+hist(rowMeans(sub_loci_GT_ag, na.rm=T), breaks = 80, xlim = c(0,1), xlab = expression(paste("% var. ", italic("rudis"), " ancestry")),
+     main = "Genome-wide (100,000 loci)")
+hist(rowMeans(sub_loci_GT_nat, na.rm=T), breaks = 100, xlim = c(0,1), add = T, col = scales::alpha("red",0.5))
+
+#legend("topleft", legend = c("Ag", "Nat"), pch = 15, col = c("gray", scales::alpha("red",0.5)), bty = "n")
+
+dev.off()
+
+mean(rowMeans(sub_loci_GT_ag, na.rm=T)) #0.7713663
+mean(rowMeans(sub_loci_GT_nat, na.rm=T)) #0.6842653
+t.test(rowMeans(sub_loci_GT_ag, na.rm=T),rowMeans(sub_loci_GT_nat, na.rm=T))
+t.test(rowMeans(gtmat_ag, na.rm=T),rowMeans(gtmat_nat, na.rm=T))
+```
+
+
+
+
+### Fit a logistic model using the full time series
+
+In the two following blocs, I fit a logistic model to the full time series that we have, from day 0 to day 20, with the days from which the genotype dies marked as NAs. 
+
+```{r prep_dataset}
+
+#(1) replace the second 0 with NA so that they are not counted towards population mean in the glm
+prep_surv <- as.data.frame(survival)
+prep_surv[prep_surv == 0] <- NA #turn every 0 to NAs
+#add zero to first time it is seen as full wilt
+for (i in 1:dim(prep_surv)[2]) { #columns
+  
+  idx <- which(is.na(prep_surv[,i]))[1]
+  if ( !is.na(idx) ) { prep_surv[idx, i] <- 0}
+ 
+}
+colnames(prep_surv) <- t(samp_order_fil) #20 x 280
+
+#(2) add ancestry info to each sample name
+snp_2 <- as.data.frame(cbind(1:n_snp,snp))
+colnames(snp_2) <- c("snpID",t(samp_order_fil)) #20 x 280
+snp_long <- melt(snp_2, id.vars = c("snpID"), variable.name = "sample", value.name = "GT") #wide to long format
+#repeat each row 20 times to match with the survival dataset
+snp_long_per_day <- snp_long[rep(row.names(snp_long), each = n_day),] #241660  
+
+
+#add day
+snp_samp_day <- data.frame(day =  rep(1:20, n_samp*n_snp), snp_long_per_day)
+
+#add survival
+GT_per_samp_per_day <- rbind(prep_surv[,rep(colnames(prep_surv), each = n_snp),]) #repeat each column (n_samp*20) n_snp times
+GT_per_samp_per_day_wide <- melt(GT_per_samp_per_day, variable.name = "sample.site", value.name = "survival") #wide to long format #196000
+
+#final
+df_glm <- cbind(snp_samp_day, GT_per_samp_per_day_wide)
+
+#remove extra info column
+df_glm <- df_glm[,-5]
+
+#add frequency of genotype
+df_glm$mean_GT <- df_glm$GT/2*df_glm$survival
+
+
+#remove intermediate steps datasets
+rm(snp_long, snp_long_per_day, GT_per_samp_per_day, GT_per_samp_per_day_wide, snp, snp_2)
+
+```
+
+In the meantime, I discussed with Julia and I am trying to remove the 0 that basically makes every trajectory go down, to test against day.
+```{r get_coefficients_mod_dataset}
+#modify df_glm to change all 0 to NAs in the survival column
+df_glm$survival_mod <- df_glm$survival
+df_glm$survival_mod[df_glm$survival==0] <- NA
+df_glm$mean_GT_mod <- df_glm$GT/2*df_glm$survival_mod
+
+#Joint estimate of s, using logistic regression approach
+lg <- glm(data=df_glm, mean_GT_mod ~ day, family="binomial") #+ snpID 
+summary(lg)
+
+#independent estimate of s 
+store_s <- matrix(NA, n_snp, 4)
+for (n in 1:n_snp) {
+  
+  idx <- which(df_glm$snpID == n)
+  
+  #logistic regression for each snp separately
+  lg <- glm(data=df_glm[idx,], mean_GT_mod ~ day, family="binomial")
+  
+  #store s and se
+  store_s[n,1] <- summary(lg)$coefficients[, 1][2]
+  store_s[n,2] <- summary(lg)$coefficients[, 2][2]
+  store_s[n,3] <- summary(lg)$coefficients[, 4][2]
+  
+}
+
+summary(store_s)
+#using "quasibinomial" suppresses the warning but also changes the standard error estimation 
+
+
+summary(store_s[,1]) #min 0.04844 #max 0.07245
+sd(store_s[,1]) #0.05793384
+
+```
+
+# Figure 4C
+
+```{r plot_all_hist}
+
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/0.Writing/1.Paper/1.Figures/Figure4/selection_coefs.pdf",  bg = "transparent", width=3, height=3, family = "Times New Roman")
+
+par(family = "Times New Roman", cex.axis = .7, cex.lab = 1.3)
+
+#selection coefficients
+hist(as.numeric(store_s[,1]*2), 20, xlab = "", main = "", ylab = "")
+title(xlab = expression(paste(italic('s'),""[beta])), ylab = "Frequency", line=2)
+box()
+
+dev.off()
+
+summary(store_s[,1]*2)
+sd(store_s[,1]*2)
+
+store_s[40,1]*2
+
+which(store_s[,1]==max(store_s[,1]))
+
+```
+
+# Calculate allele frequency for every site on the ancestry call table
+```{r generate_null_subsample}
+# #!/usr/bin/env Rscript 
+#   
+# library(data.table)
+# library(reshape2)
+# setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/8.ancestry_hmm/1.results/trajectories/")
+# anc <- read.table("two_pulse_flexible_prop_2_values.txt", sep = "\t", header = T)
+# anc_calls <- anc[,-c(1,2)]
+# samp_order <- colnames(anc)
+# idx <- c( which(samp_order == "P16_Nat_1_T") , which(samp_order == "P12_Nat_14_T") )
+# anc_calls <- anc_calls[,-idx] # 786261 x 280
+# 
+# #add chrom pos info back in
+# anc_calls <- cbind(anc[,c(1,2)],anc_calls)
+# #randomly subsample N sites (for speed)
+# anc_calls_rdn <- anc_calls[sort(sample(1:dim(anc_calls)[1], 10000)),]
+# #sort by chrom and position then remove these columns
+# info <- anc_calls_rdn[,c(1,2)]
+# anc_calls_rdn <- anc_calls_rdn[,-c(1,2)]
+# 
+# #upload survival matrix
+# survival <- read.table("sample_survival_drought.txt", sep = "\t", header = F)
+# 
+# #calculate allele frequency
+# n_snp <- dim(anc_calls_rdn)[1]
+# n_samp <- dim(anc_calls_rdn)[2]
+# n_day <- 20
+# daily_af_all <- matrix(NA, n_day, n_snp)
+# 
+# for (day in 1:n_day) {
+# 
+#   for (mut in 1:n_snp) {
+# 
+#     af <- c()
+#     for (samp in 1:n_samp) {
+# 
+#       #if alive, count in AF
+#       if (survival[day,samp] == 1 & !is.na(anc_calls_rdn[mut,samp])) {
+# 
+#         if (anc_calls_rdn[mut,samp] == 0) {af <- c(af, 0)}
+#         if (anc_calls_rdn[mut,samp] == 1) {af <- c(af, 1)}
+#         if (anc_calls_rdn[mut,samp] == 2) {af <- c(af, 2)}
+# 
+#       }
+# 
+# 
+#     }
+# 
+#     daily_af_all[day, mut] <- sum(af)/(length(af)*2)
+# 
+#   }
+# 
+#   export <- cbind(info[day,], t(daily_af_all[day,]))
+#   write.table(export, "anc_call_10000_frequency_all.txt", sep = "\t", col.names = F, row.names = F, append = T )
+#   print(day)
+# 
+# }
+
+```
+# Generate null for every site
+The bloc below is to be run on the cluster (700,000+ sites).
+```{r generate_null_full}
+# see script calculate_ancestry_fq_short.R
+```
+
+# Drought length change
+How does the selection coefficient vary with drought length ?
+We stopped the experiment at day 20 but we actually have access to more data/days (days until day 20). How does the drought length affect s ?
+
+```{r drought_length}
+
+
+#remove last day
+#calculate mean and sd s with one day less in each analysis
+mean_s <- c()
+std_s <- c()
+
+for (day in 20:10) { #
+    
+  #remove the last day of exp for all samples
+  df_glm_tmp <- df_glm[df_glm$day < day, ]
+  #independent estimate of s 
+  store_s <- matrix(NA, n_snp, 3)
+
+    for (n in 1:n_snp) {
+      
+      idx <- which(df_glm_tmp$snpID == n)
+      
+      #logistic regression for each snp separately
+      lg <- glm(data=df_glm_tmp[idx,], mean_GT_mod ~ day, family="binomial")
+      
+      #store s and se
+      store_s[n,1] <- summary(lg)$coefficients[, 1][2]
+      store_s[n,2] <- summary(lg)$coefficients[, 2][2]
+      store_s[n,3] <- summary(lg)$coefficients[, 4][2]
+    }
+  
+  #keep mean and sd
+  mean_s <- c(mean_s, mean(store_s[,1]))
+  std_s <- c(std_s, mean(store_s[,2]))
+  
+  #if no significant p-value, stop
+  if (length(which(store_s[,3]<0.05)) <= 1) {break}
+}
+
+colnames(store_s) <- c("coef", "std_err", "pval")
+summary(store_s)
+#using "quasibinomial" suppresses the warning but also changes the standard error estimation
+```
+
+
+# Figure 4A - Stacked plot selection and trajectories on the same plot
+
+```{r export_plots}
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/6.trajectories/mean_S_coefs.pdf", 
+    bg = "transparent", width=8, height=3, family = "Times New Roman")
+
+#higher panel
+par(cex.lab = 1.5, cex.axis = 1)
+
+plot(20:10, mean_s*2, pch = 16, xlab = "", yaxt="n", xaxt = "n",
+     ylab = "", cex = 1.3, ylim = c(0,0.15), xlim = c(1,20))
+arrows(20:10, mean_s*2 + std_s, 20:10, mean_s*2 - std_s, code = 3, angle = 90, length = 0.1,)
+axis(side = 2, at = c(0, 0.05, 0.1, 0.15), labels = c(0,0.05,0.1,0.15))
+mtext(expression(paste("Mean ", italic('s'),""[beta])), side = 2, at = 0.05, line = 2.5, cex = 1.5)
+
+dev.off()
+
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/6.trajectories/trajectories.pdf", 
+    bg = "transparent", width=8, height=5, family = "Times New Roman")
+
+#lower panel
+par(cex.lab = 1.5, cex.axis = 1)
+
+fq <- fq_full[-c(1,2),]
+plot(0, xlim = c(0,20), ylim = c(0,1), pch = "", xlab = "Length of drought (days)", 
+     ylab =  "", yaxt = "n")
+
+axis(side = 2, at = c(0,0.5,1), labels = c(0,0.5,1) )
+mtext(substitute(paste("Var. ",italic("rudis"), " haplotype frequency")), side = 2, at = 0.5, line = 2.5, cex = 1.5)
+for (p in 1:dim(fq)[2]) {lines(1:20, fq[,p], col = scales::alpha("black", 0.01))}
+
+# add the 35 drought adapted sites
+for (p in 1:n_snp) {
+  
+    
+  points(1:20, daily_af[, p], lwd = 1.5 , col = af_colors[p], type = "l" )
+  
+
+}
+
+dev.off()
+
+
+#make legend
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/6.trajectories/legend.pdf", 
+    bg = "transparent", width=3, height=4, family = "Times New Roman")
+
+selection_43[,1] <- as.numeric(selection_43[,1])
+legend_image <- as.raster(matrix(unique(selection_43[order(selection_43[,1]),4]), ncol=1))
+plot(c(0,2),c(0,1),type = 'n', axes = F,xlab = '', ylab = '', main = '')
+text(x=1.5, y = seq(0,1), labels = c(round(as.numeric(selection_43[order(as.numeric(selection_43[,1])),1][1]),2),
+                                     round(as.numeric(selection_43[order(as.numeric(selection_43[,1])),1][35]),2)))
+rasterImage(legend_image, 0, 1, 1,0)
+
+dev.off()
+```
+
+# Compare to null based on similar starting trajectories (700,000+ sites)
+```{r select_sites, eval=FALSE, include=FALSE}
+#!/usr/bin/env Rscript 
+
+# setwd("/scratch/midway2/rozennpineau/drought/generate_null/")
+# daily_af <- read.table("daily_af_data.txt")
+# fq_full <- read.table("/scratch/midway2/rozennpineau/drought/two_pulse_flexible_prop_2/anc_call_frequency_site1-786261.txt")
+# fq <- fq_full[-c(1,2),]
+# 
+# #how many sites per bin for the data?
+# max(daily_af[1,]) - min(daily_af[1,]) #0.3 --> if we want a precision of 0.001, make 300 bins
+# bins <- hist(as.numeric(daily_af[1,]), breaks = 100, xlim = c(min(daily_af[1,]),max(daily_af[1,]))) #make 300 bins between min daily_af and max daily_af
+# #I am actually trying with a lower number of bins because I did not have sites in every starting frequency to sample from
+# iteration <- which(bins$counts > 0) #15 different starting frequencies
+# n_sites <- bins$counts[bins$counts > 0]
+# 
+# #Keep sites that have the same starting frequency range
+# fq_fil <- fq[ , which(fq[1,] >= min(daily_af[1,]) & fq[1,] <= max(daily_af[1,]))]
+# 
+# af_change_list <- vector("list", length(n_sites))
+# 
+# #make pools of same range bins in a list
+# for (i in 1:length(iteration)) {
+# 
+#   idx <- which(bins$breaks[iteration[i]] <= fq_fil[1,] & fq_fil[1,] <= bins$breaks[iteration[i]+1])
+#   print(length(idx))
+#   if (length(idx)>0) { af_change_list[[i]] <- t(fq_fil[20,idx] - fq_fil[1,idx])}
+# 
+#   }
+# #export list
+# sink('af_change_list.txt')
+# print(af_change_list)
+# sink()
+```
+The previous chunk was run on the cluster. Below, I upload the resulting dataset and perform the permutation.
+
+
+# Permutations with the calculated daily allele frequency change for all sites
+This only needs to be run once - I have saved the dataset of permuted values. It does not take long at all. 
+```{r permutations, eval=FALSE, include=FALSE}
+#drought-adapted sites (43)
+#how many sites per bin for the data?
+max(daily_af[1,]) - min(daily_af[1,]) #0.17 --> if we want a precision of 0.001, make 170 bins
+bins <- hist(as.numeric(daily_af[1,]), breaks = 100, xlim = c(min(daily_af[1,]),max(daily_af[1,]))) 
+iteration <- which(bins$counts > 0) #31 different starting frequencies
+n_sites <- bins$counts[bins$counts > 0]
+
+#allele frequency change for every site
+library(rio) #for import_list function
+af_change_list <- import_list("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/6.trajectories/af_change/af_change_list_43.txt", fill = TRUE, sep = "\t")
+# af_change_list <- import_list("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/6.trajectories/matrices/af_change_list.txt", fill = TRUE, sep = "\t")
+af_change_list <- af_change_list[[1]] #223564 x 1
+
+#the list has a weird format, in which every new list starts with 22, I can use this to extract the vector containing the frequency changes for each bin
+idx <- which(af_change_list$V1 == "22") #length is 19, one for each bin
+#make a new list
+af_change <- vector("list", length(n_sites))
+
+last <- 31 #last index 
+for (i in 1:(last-1)){
+  
+  cur <- idx[i]
+  af_change[[i]] <- af_change_list$V2[(idx[i]+1):(idx[i+1]-1)]
+  #lots of NAs - remove
+  af_change[[i]] <- af_change[[i]][!is.na(af_change[[i]])]
+
+}
+
+#add the last one manually
+af_change[[last]] <- af_change_list$V2[(idx[last]):length(af_change_list$V2)]
+af_change[[last]] <- af_change[[last]][!is.na(af_change[[last]])]
+
+
+#calculate mean for 43 randomly selected sites
+L <- 10000 # number of permutations
+mean_af_change <- matrix(NA, 1, L)
+
+for (perm in 1:L) {
+  
+    cur <- c()
+    
+    for (i in 1:19) {
+      
+      #sample X site from each bin
+      cur <- c(cur, af_change[[i]][sample(length(af_change[[i]]), n_sites[i])] )
+
+      
+    }
+  
+    #take the mean
+    mean_af_change[perm] <- mean(cur)
+  
+}
+
+write.table(mean_af_change, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/6.trajectories/af_change/mean_af_change_null.txt", sep = "\t", row.names = F, col.names = F)
+
+```
+
+# Figure 4B
+
+```{r plot_permutation}
+
+mean_af_change <- as.matrix(read.table( "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/6.trajectories/af_change/mean_af_change_null.txt", sep = "\t", header = F))
+
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/0.Writing/1.Paper/1.Figures/Figure4/fixation_compared_to_rdn.pdf", 
+    bg = "transparent", width=3, height=3, family = "Times New Roman")
+
+#plot permutations
+par(family = "Times New Roman", cex.axis = .7, cex.lab = 1.3)
+hist(mean_af_change, breaks = 20, xlab = "", main = "", ylab = "")
+box()
+#plot data
+abline(v = af_change_stats[4], col = "red", lwd = 2)
+title(xlab = "AF change", ylab = "Frequency", line=2)
+
+dev.off()
+
+#calculate significance
+length(which(mean_af_change > af_change_stats[4]))/10000 #0.26 for data , p = 0.05
+
+#Calculate the mean allele frequency change for your 35 drought-associated loci: μ_observed
+# - For each permutation set, calculate the mean allele frequency change: μ_permuted_i
+# - Calculate the mean and standard deviation of all permuted mean changes: μ_null and σ_null
+# 0 Calculate the Z-score: Z = (μ_observed - μ_null) / σ_null
+
+#calculate z-score
+(af_change_stats[4] - mean(mean_af_change) ) / sd(mean_af_change) #1.47
+
+```
+
+
+
+
+
+
+
+
+
