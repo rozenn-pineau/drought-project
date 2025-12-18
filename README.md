@@ -880,7 +880,7 @@ Results written to cmh_015_clumped_100kb.clumped
 **4248 clumps formed from 13652 top variants**
 
 
-# How many of these clumps overlap with the drought loci?
+### How many of these clumps overlap with the drought loci?
 ```
 #Make bed file from CMH clumps
 awk -v OFS="\t" '{print $1, $4, $4}' cmh_015_clumped_100kb.clumped > cmh_015_clumped_100kb.clumped.bed
@@ -899,3 +899,11 @@ bedtools intersect -a $gwasbed -b $cmhbed > intersect_clumped_drought_cmh_gwas.b
 
 
 ```
+# Figure 4 analyses
+
+Generate list with allele frequency change from day 20 to day 1 for similar starting allele frequencies (0.001 precision) (Figure 4A): [generate_null.R](https://github.com/rozenn-pineau/drought-project/blob/main/generate_null.R).
+
+Script to generate plot and run analyses for Figure 4A,B,C : [Figure4_ABC.Rmd](https://github.com/rozenn-pineau/drought-project/blob/main/Figure4_ABC.Rmd).
+
+Script to calculare Hazard Ratio (Figure 4D) : [cox_on_ancestry_calls_v2.Rmd](https://github.com/rozenn-pineau/drought-project/blob/main/cox_on_ancestry_calls_v2.Rmd).
+
