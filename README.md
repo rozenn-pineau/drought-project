@@ -100,7 +100,7 @@ done
 ```
 Rscript to plot results from trade-offs analyses : [trade_offs_control.Rmd](https://github.com/rozenn-pineau/drought-project/blob/main/trade_offs_control.Rmd)
 
-# Figure 3 analyses
+# Figure 2 analyses
 
 ### Estimating global ancestry using ADMIXTURE
 To calculate genome-wide ancestry, we used ADMIXTURE version 1.3.0 (Alexander et al., 2009). 
