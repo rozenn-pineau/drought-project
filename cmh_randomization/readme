@@ -1,3 +1,3 @@
 ### Step 1
 
-Separate chromosomes into individual files for faster analysis : []()
+Separate chromosomes into individual files for faster analysis : [separate_chrom.sh](https://github.com/rozenn-pineau/drought-project/blob/main/cmh_randomization/separate_chrom.sh)
