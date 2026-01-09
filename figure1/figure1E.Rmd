@@ -1,0 +1,404 @@
+---
+title: "Compare growth rate and LD50 in control and drought conditions"
+output: html_document
+date: "2025-07-01"
+---
+
+Make Figure 1E panel. 
+
+# (1) Import datasets
+```{r setup, include=FALSE}
+
+library(extrafont)
+library(dplyr)
+library(ggplot2)
+library(car)
+library(lme4)
+library(lmerTest) #need to load both libraries for p values to show 
+library(colourvalues)
+
+rm(list= ls())
+
+#upload data
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/10.EPSPS/depths")
+coding <- read.table("depth.txt", sep = "\t", header = F)
+EPSPS <- read.table("EPSPS.depth", sep = "\t", header = F)
+metadata <- read.table("metadata_drought.txt", sep = "\t", header = T)
+
+#Adjust col names
+colnames(EPSPS) <- c("sampID", "depth")
+
+#create new variable with samp ID
+metadata$sampID <- paste(metadata$Pool, metadata$Position, sep = "_")
+
+#calculate mean depth for the whole coding region to delete this big file from the working environment
+coding_mean_depth_per_samp <- colMeans(coding[,4:283])
+coding_median_depth_per_samp <- apply(coding[,4:283],2,median)
+hist(coding_mean_depth_per_samp, 100)
+hist(coding_median_depth_per_samp, 100)
+rm(coding)
+#same order as EPSPS
+EPSPS$coding_genome_wide_mean <- coding_mean_depth_per_samp
+EPSPS$coding_genome_wide_median <- coding_median_depth_per_samp
+
+#normalize by genome wide per sample mean depth for coding sequences
+EPSPS$depth_norm_mean <- EPSPS$depth/EPSPS$coding_genome_wide_mean
+EPSPS$depth_norm_median <- EPSPS$depth/EPSPS$coding_genome_wide_median
+
+#remove from metadata bam with problem
+# "AT11_395" & "AT1_13"
+idx <- c(which(metadata$sampID == "AT1_13"), which(metadata$sampID == "AT11_395"))
+metadata_fil <- metadata[-idx,]
+
+#merge metadata and depth file for treatment
+full <- merge(EPSPS, metadata_fil, by = "sampID")
+
+
+#ADMIXTURE
+#global admixture results
+k2 <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/2.admixture/k2_structure_res.csv", 
+                 sep = ",", header = T)
+#Filter out outliers : P16_Nat_1_T P12_Nat_14_T
+idx <- which(k2$samp == c("P16_Nat_1_T",  "P12_Nat_14_T"))
+k2_fil <- k2[-c(idx),] #280 x 11
+#update label to join datasets
+colnames(k2_fil) <- c("X", "Label", "pair", "env", "ind", "treatment", "lat", "long", "V1", "k2.V1", "k2.V2")
+fulldt <- inner_join(full, k2_fil, by="Label")
+
+
+#LD50 (DROUGHT)
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/4.phenotypes")
+ld50 <- read.table("ld50.txt", sep = "\t", header = T) 
+fulldt$pair <- gsub("P","",as.character(fulldt$pair)) #modify column
+
+
+```
+
+
+We are also interested in controlling for the drought effects by testing the trade offs between normal growth and the other variables. 
+
+
+```{r upload_control_and_merge}
+#merge metadata and depth file for control (sibling plants)
+phenos_all <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/7.tradeoffs/phenos_wmeta.txt", sep = "\t", header = T)
+phenos_control <- phenos_all[phenos_all$Treatment == "Control",]
+
+#prep dataset for merging
+to_dt_to_merge <- data.frame(Pair = fulldt$Pair, Ind =  fulldt$Ind, Env =  fulldt$Env, 
+                             depth_norm_mean = fulldt$depth_norm_mean, Day.of.Full.Wilt =  fulldt$Day.of.Full.Wilt, 
+                             Bench = fulldt$Bench, Tray = fulldt$Tray, long = fulldt$long, lat = fulldt$lat, 
+                             k2.V1 = fulldt$k2.V1)
+phenos_control_to_merge <- data.frame(Pair = phenos_control$Pair, Ind =  phenos_control$Ind, Env =  phenos_control$Env, 
+                             growth_rate_height =  phenos_control$growth_rate_height)  
+to_dt_to_merge$Pair <- gsub("P","",as.character(to_dt_to_merge$Pair)) #modify column
+
+
+#merge
+control <- merge(to_dt_to_merge, phenos_control_to_merge, by = c("Pair", "Ind", "Env")) #264 samples with data !
+
+```
+
+
+# (2) Drought-treated population analyses
+
+## Calculate growth rates 
+
+```{r growth_rate}
+#calculate growth rates
+#subtract height/width after drought to before drought and compare between treatments
+##stem width
+fulldt$growth.rate.stem<-fulldt$Stem.Width.1W.Post.Drought - fulldt$Stem.Width..mm.
+
+fulldt <- fulldt %>% mutate(stemrate_tilldeath=fulldt$Stem.Width.at..Death.- fulldt$Stem.Width..mm.) %>%
+  mutate(stemrate_combined = coalesce(stemrate_tilldeath,growth.rate.stem))
+hist(fulldt$stemrate_combined,breaks=20,)
+
+##plant height
+fulldt$growth_rate_height<-(fulldt$Plant.Height.1W.Post.Drought - fulldt$Plant.Height..cm. )/7
+hist(fulldt$growth_rate_height,breaks=100) #1 week growth rate, early life history
+
+fulldt$growth_rate_height_2<-(fulldt$Plant.Height.2W - fulldt$Plant.Height.1W.Post.Drought)/7
+hist(fulldt$growth_rate_height_2,breaks=100) #1 week growth rate, mid life history 
+
+#2 values are <0 in growth rate week 1 : prpobably plant was dying or mistake while recording measure ?
+#I excluce them from the dataset
+tmp <- fulldt[-which(fulldt$growth_rate_height<0), ] # 276  58
+fulldt <- tmp
+hist(fulldt$growth_rate_height,breaks=100) #all values are now >0
+
+
+fulldt$long_cols <- color_values(fulldt$long, palette = "purples")
+```
+
+
+
+## Population summaries
+Do we see more signal when we focus on population-level (mean) versus individual-level data ?
+
+```{r summarize_pop}
+pop_phenos <- fulldt %>%
+  group_by(Pair, Env) %>%
+  summarize(
+    count = n(),                   # Count of each group
+    mean_growth_rate_height = mean(growth_rate_height, na.rm=T),     
+    sd_growth_rate_height = sd(growth_rate_height, na.rm=T),       
+    mean_growth_rate_height = mean(growth_rate_height, na.rm=T),        
+    sd_growth_rate_height = sd(growth_rate_height, na.rm=T),
+    mean_epsps_depth_norm = mean(depth_norm_mean, na.rm=T),        
+    sd_epsps_depth_norm = sd(depth_norm_mean, na.rm=T),
+    mean_day_of_full_wilt = mean(Day.of.Full.Wilt, na.rm=T),        
+    sd_day_of_full_wilt = sd(Day.of.Full.Wilt, na.rm=T),
+    mean_k2 = mean(k2.V1, na.rm = T),
+    sd_k2 = sd(k2.V1, na.rm = T),
+    long_cols = long_cols
+  )
+
+
+pop_phenos_drought <- pop_phenos
+```
+
+
+## LD50
+
+```{r drought_pop_level}
+#prepare datasets
+colnames(ld50) <- c("ld50", "ld50_minus_stderr", "ld50_plus_stderr", "pair", "lat", "long", "Env"  )
+ld50$pair <- as.character(ld50$pair)
+pop_phenos$pair <- gsub("P","",as.character(pop_phenos$Pair))
+#join dataset
+ld50_pop_phenos <- inner_join(pop_phenos, ld50, by = c("pair", "Env"))
+
+ld50_pop_phenos_drought <- ld50_pop_phenos
+```
+
+
+
+
+# (3) Control populations analyses
+
+```{r growth_vs_covariates}
+
+control_fil <- control[control$growth_rate_height >0 ,] #263 x 11
+control_fil$long_cols <- color_values(control_fil$long, palette = "purples")
+```
+
+
+
+## Population-level analysis
+```{r summarize_pop}
+pop_phenos <- control_fil %>%
+  group_by(Pair, Env) %>%
+  summarize(
+    count = n(),                   # Count of each group
+    mean_growth_rate_height = mean(growth_rate_height, na.rm=T),     
+    sd_growth_rate_height = sd(growth_rate_height, na.rm=T),       
+    mean_growth_rate_height = mean(growth_rate_height, na.rm=T),        
+    sd_growth_rate_height = sd(growth_rate_height, na.rm=T),
+    mean_epsps_depth_norm = mean(depth_norm_mean, na.rm=T),        
+    sd_epsps_depth_norm = sd(depth_norm_mean, na.rm=T),
+    mean_day_of_full_wilt = mean(Day.of.Full.Wilt, na.rm=T),
+    sd_day_of_full_wilt = sd(Day.of.Full.Wilt, na.rm=T),
+    mean_k2 = mean(k2.V1, na.rm = T),
+    sd_k2 = sd(k2.V1, na.rm = T),
+    long_cols = long_cols
+  )
+
+#prepare datasets
+colnames(ld50) <- c("ld50", "ld50_minus_stderr", "ld50_plus_stderr", "pair", "lat", "long", "Env")
+ld50$pair <- as.character(ld50$pair)
+pop_phenos$pair <- gsub("P","",as.character(pop_phenos$Pair))
+#join dataset
+ld50_pop_phenos <- inner_join(pop_phenos, ld50, by = c("pair", "Env"))
+
+
+
+```
+# (4) Figure 1E plot
+```{r F1E}
+
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/1.ld50_pca/")
+
+pdf("Figure1E_stderr.pdf", 
+    bg = "white", width=4, height=5, family = "Times New Roman")
+
+
+par(family = "Times New Roman", mfrow = c(1,1), cex.axis = 1, cex.lab = 1.5) 
+
+N <- length(ld50_pop_phenos_drought$ld50)
+
+plot(1,  pch = 21, ylab = "Drought LD50", cex = 1.2,
+     xlab = "Mean early growth rate", main = "", xlim = c(4,6.5), ylim = c(7,14), yaxt = "n")
+
+#pop - control
+to_c <- lm( ld50_pop_phenos$ld50 ~ ld50_pop_phenos$mean_growth_rate_height) #linear model
+summary(to_c)
+#correlation coefficient
+cor(ld50_pop_phenos$ld50, ld50_pop_phenos$mean_growth_rate_height) #-0.5811614, p-value < 2.2e-16
+
+cor.test(ld50_pop_phenos$ld50, ld50_pop_phenos$mean_growth_rate_height)
+#se
+N <- length(ld50_pop_phenos$ld50)
+arrows(ld50_pop_phenos$mean_growth_rate_height, ld50_pop_phenos$ld50_plus_stderr,
+       ld50_pop_phenos$mean_growth_rate_height, ld50_pop_phenos$ld50_minus_stderr,
+       code = 3, angle = 90, length = 0, col = "#353535")
+
+arrows(pop_phenos$mean_growth_rate_height + (pop_phenos$sd_growth_rate_height/sqrt(N)), ld50_pop_phenos$ld50, 
+       pop_phenos$mean_growth_rate_height - (pop_phenos$sd_growth_rate_height/sqrt(N)), ld50_pop_phenos$ld50, code = 3,
+       angle = 90, length = 0, col = "#353535")
+
+#pch by environment
+pchvec <- rep(21, length(ld50_pop_phenos$ld50))
+pchvec[ld50_pop_phenos$Env == "Nat"] <- 22
+points(ld50_pop_phenos$mean_growth_rate_height, ld50_pop_phenos$ld50,  pch = pchvec, cex=1.2, lwd = 0.5,
+      col = "#353535", bg = ld50_pop_phenos$long_cols)
+
+#fits
+points(c(seq(4.2,6.4,by = 0.2)), to_c$coefficients[1] + to_c$coefficients[2] * c(seq(4.2,6.4,by = 0.2)), type = "l", col = "#353535", lwd = 2)
+
+dev.off()
+
+summary(to_c)
+
+#Wilcoxon test to compare habitats
+#setp 1 : keep the same number of inds per pair
+pairs <- as.data.frame(table(ld50_pop_phenos$Pair[ld50_pop_phenos$Env == "Ag"]))$Var1
+ag_counts <- as.data.frame(table(ld50_pop_phenos$Pair[ld50_pop_phenos$Env == "Ag"]))$Freq
+nat_counts <- as.data.frame(table(ld50_pop_phenos$Pair[ld50_pop_phenos$Env == "Nat"]))$Freq
+#take the minimum of each counts
+ag_mean_epsps <- c()
+nat_mean_epsps <- c()
+for (p in 1:length(pairs)) {
+  cur_p <- pairs[p]
+  min_val <- min(c(ag_counts[p], nat_counts[p]))
+  #select first min_val samples
+  ag_samps <- ld50_pop_phenos[ld50_pop_phenos$Pair == cur_p & ld50_pop_phenos$Env == "Ag",]
+  ag_mean_epsps <- rbind(ag_mean_epsps,ag_samps[1:min_val,])
+  
+  nat_samps <- ld50_pop_phenos[ld50_pop_phenos$Pair == cur_p & ld50_pop_phenos$Env == "Nat",]
+  nat_mean_epsps <- rbind(nat_mean_epsps,nat_samps[1:min_val,])
+}
+
+#check
+dim(nat_mean_epsps) # 100 x 18
+dim(ag_mean_epsps) # 100 x 18
+
+wilcox.test(nat_mean_epsps$mean_growth_rate_height, ag_mean_epsps$mean_growth_rate_height, paired = T, alternative = "greater")
+# 	Wilcoxon signed rank test with continuity correction
+# 
+# data:  nat_mean_epsps$mean_growth_rate_height and ag_mean_epsps$mean_growth_rate_height
+# V = 3928, p-value = 6.793e-07
+# alternative hypothesis: true location shift is greater than 0
+
+```
+
+```{r separate_habitats}
+
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/1.ld50_pca/")
+
+pdf("Figure1E_stderr_habitats.pdf", 
+    bg = "white", width=4, height=5, family = "Times New Roman")
+
+
+par(family = "Times New Roman", mfrow = c(1,1), cex.axis = 1, cex.lab = 1.5) 
+
+N <- length(ld50_pop_phenos_drought$ld50)
+
+plot(1,  pch = 21, ylab = "Drought LD50", cex = 1.2,
+     xlab = "Mean early growth rate", main = "", xlim = c(4,6.5), ylim = c(7,14), yaxt = "n")
+
+#pop - control + nat
+idx_nat <- ld50_pop_phenos$Env == "Nat"
+to_c_nat <- lm( ld50_pop_phenos$ld50[idx_nat] ~ ld50_pop_phenos$mean_growth_rate_height[idx_nat]) #linear model
+summary(to_c_nat)
+idx_ag <- ld50_pop_phenos$Env == "Ag"
+to_c_ag <- lm( ld50_pop_phenos$ld50[idx_ag] ~ ld50_pop_phenos$mean_growth_rate_height[idx_ag]) #linear model
+summary(to_c_ag)
+
+#correlation coefficient
+cor(ld50_pop_phenos$ld50, ld50_pop_phenos$mean_growth_rate_height) #-0.5811614, p-value < 2.2e-16
+
+cor.test(ld50_pop_phenos$ld50, ld50_pop_phenos$mean_growth_rate_height)
+#se
+N <- length(ld50_pop_phenos$ld50)
+arrows(ld50_pop_phenos$mean_growth_rate_height, ld50_pop_phenos$ld50_plus_stderr,
+       ld50_pop_phenos$mean_growth_rate_height, ld50_pop_phenos$ld50_minus_stderr,
+       code = 3, angle = 90, length = 0, col = "#353535")
+
+arrows(pop_phenos$mean_growth_rate_height + (pop_phenos$sd_growth_rate_height/sqrt(N)), ld50_pop_phenos$ld50, 
+       pop_phenos$mean_growth_rate_height - (pop_phenos$sd_growth_rate_height/sqrt(N)), ld50_pop_phenos$ld50, code = 3,
+       angle = 90, length = 0, col = "#353535")
+
+#pch by environment
+pchvec <- rep(21, length(ld50_pop_phenos$ld50))
+pchvec[ld50_pop_phenos$Env == "Nat"] <- 22
+points(ld50_pop_phenos$mean_growth_rate_height, ld50_pop_phenos$ld50,  pch = pchvec, cex=1.2, lwd = 0.5,
+      col = "#353535", bg = ld50_pop_phenos$long_cols)
+
+#fits
+points(c(seq(4.2,6.4,by = 0.2)), to_c_nat$coefficients[1] + to_c_nat$coefficients[2] * c(seq(4.2,6.4,by = 0.2)), type = "l", col = "#353535", lwd = 2, lty = 2)
+points(c(seq(4.2,6.4,by = 0.2)), to_c_ag$coefficients[1] + to_c_ag$coefficients[2] * c(seq(4.2,6.4,by = 0.2)), type = "l", col = "#353535", lwd = 2)
+
+dev.off()
+```
+
+
+
+# (4) (old) Figure 1E plot 
+
+```{r combined_all}
+
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/1.ld50_pca/")
+
+pdf("Figure1E.pdf", 
+    bg = "white", width=4, height=5, family = "Times New Roman")
+
+
+par(family = "Times New Roman", mfrow = c(1,1), cex.axis = 1.5, cex.lab = 1.5)#, cex = 1.1,  mai = c(0.6, .5, .5, .5), oma = c(.1, .1, .1, .1))
+
+#-------------------------------------------------------------
+#first row : growth_rate_height - EPSPS
+line_drought <- "#62938b"
+line_control <- "#4d4d4d"
+
+N <- length(ld50_pop_phenos_drought$ld50)
+ld50_pop_phenos$ld50_se <- (ld50_pop_phenos$ld50-ld50_pop_phenos$ld50_plus_stderr)/N
+
+#pop - control
+to_c <- lm( ld50_pop_phenos$ld50 ~ ld50_pop_phenos$mean_growth_rate_height)
+plot(ld50_pop_phenos$mean_growth_rate_height, ld50_pop_phenos$ld50,  pch = 21, ylab = "LD50", cex = 1.2,
+     xlab = "Mean early growth rate", main = "", xlim = c(3.2,6), col = "gray", bg = ld50_pop_phenos$long_cols, ylim = c(7,14), yaxt = "n")
+#se
+N <- length(ld50_pop_phenos$ld50)
+arrows(ld50_pop_phenos$mean_growth_rate_height, ld50_pop_phenos$ld50 + ld50_pop_phenos$ld50_se, 
+       ld50_pop_phenos$mean_growth_rate_height, ld50_pop_phenos$ld50 - ld50_pop_phenos$ld50_se, code = 3,
+       angle = 90, length = 0.05, col = ld50_pop_phenos$long_cols)
+arrows(pop_phenos$mean_growth_rate_height + (pop_phenos$sd_growth_rate_height/N), ld50_pop_phenos$ld50, 
+       pop_phenos$mean_growth_rate_height - (pop_phenos$sd_growth_rate_height/N), ld50_pop_phenos$ld50, code = 3,
+       angle = 90, length = 0.05, col = ld50_pop_phenos$long_cols)
+
+
+#pop - drought
+to <- lm( ld50_pop_phenos_drought$ld50 ~ ld50_pop_phenos_drought$mean_growth_rate_height)
+points(ld50_pop_phenos_drought$mean_growth_rate_height, ld50_pop_phenos_drought$ld50,  pch = 8, bg = ld50_pop_phenos$long_cols, col = "gray", cex = 1.2)
+#se
+N <- length(ld50_pop_phenos_drought$ld50)
+ld50_pop_phenos_drought$ld50_se <- (ld50_pop_phenos_drought$ld50_plus_stderr-ld50_pop_phenos_drought$ld50)/N
+arrows(ld50_pop_phenos_drought$mean_growth_rate_height, ld50_pop_phenos_drought$ld50 + ld50_pop_phenos_drought$ld50_se, 
+       ld50_pop_phenos_drought$mean_growth_rate_height, ld50_pop_phenos_drought$ld50 - ld50_pop_phenos_drought$ld50_se, 
+       code = 3, angle = 90, length = 0.05, col = ld50_pop_phenos_drought$long_cols)
+arrows(ld50_pop_phenos_drought$mean_growth_rate_height + ld50_pop_phenos_drought$sd_growth_rate_height/N, ld50_pop_phenos_drought$ld50, 
+       ld50_pop_phenos_drought$mean_growth_rate_height - ld50_pop_phenos_drought$sd_growth_rate_height/N, ld50_pop_phenos_drought$ld50, 
+       code = 3, angle = 90, length = 0.05, col = ld50_pop_phenos_drought$long_cols)
+#fits
+points(c(seq(4,6,by = 0.2)), to_c$coefficients[1] + to_c$coefficients[2] * c(seq(4,6,by = 0.2)), type = "l", col = line_control, lwd = 2)
+points(c(seq(3.2,6,by = 0.2)), to$coefficients[1] + to$coefficients[2] * c(seq(3.2,6,by = 0.2)), type = "l", col = line_drought, lwd = 2)
+
+dev.off()
+
+
+```
+
+
+
+
+
