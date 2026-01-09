@@ -1,5 +1,3 @@
-# Figure 3 analyses
-
 ## Ancestry mapping using ancestry hmm on the contemporary dataset
 
 [Ancestry_hmm](https://github.com/russcd/Ancestry_HMM) : tool to infer ancestry at input positions in the genome (Corbett-Detig, R. and Nielsen, R., 2017.)
