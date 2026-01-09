@@ -293,9 +293,3 @@ bcftools query -f '%CHROM %POS  %REF  %ALT [ %GT]\n' drought_adapted_43clumps.re
 scp rozennpineau@midway3.rcc.uchicago.edu:/scratch/midway2/rozennpineau/drought/two_pulse_flexible_prop_2/drought_adapted_43clumps_GT.txt /Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My\ Drive/Work/9.Science/1.DroughtProject/1.analyses/data/6.trajectories/
 ```
 
-
-### Checking : Does ancestry predict response to drought ?
-
-Our expectation is that var. rudis ancestry is better adapted to drought than var. tuberculatus. 
-Do we see this in our ancestry calls ? This is also simply a way to make sure that our pipeline was coded correctly. 
-
