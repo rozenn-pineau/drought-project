@@ -1,6 +1,8 @@
 ## Figure 5 analyses
 
-### Admixture mapping on herbarium dataset
+### Admixture mapping on herbarium dataset 
+
+[admixture_mapping_herbarium.md](https://github.com/rozenn-pineau/drought-project/tree/main/figure5/admixture_mapping_herbarium.md)
 
 ### Climate data analyses
 
