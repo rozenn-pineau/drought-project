@@ -38,7 +38,7 @@ vcftools --vcf fst/ancestry_maf.vcf \
 
 ```
 
-Rscript to choose Fst threshold : [fst_on_ancestry.Rmd](https://github.com/rozenn-pineau/drought-project/blob/main/fst_on_ancestry.Rmd)
+Rscript to choose Fst threshold : [fst_on_ancestry.Rmd](https://github.com/rozenn-pineau/drought-project/blob/main/figure3/fst_on_ancestry.Rmd)
 
 ### Step (3) : keep the variants common to the ancestry variant file and the drought variant file
 The ancestry was filtered for the high Fst sites. This filtered file was used to keep the intersection between the ancestry variant file and the drought variant file (bcftools isec).
@@ -56,7 +56,7 @@ Rscript to calculate rho between sites : [calculate_ldhat_between_sites.Rmd](htt
 
 ### Step (5) : extract allele counts from the ancestry variant file
 
-[genotype_to_allele_counts.awk](https://github.com/rozenn-pineau/drought-project/blob/main/genotype_to_allele_counts.awk)
+[genotype_to_allele_counts.awk](https://github.com/rozenn-pineau/drought-project/blob/main/figure3/genotype_to_allele_counts.awk)
 
 exanple output :
 22 22 for 22 individuals, all heterozygotes
