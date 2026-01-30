@@ -34,6 +34,7 @@ write.table(lead_snp_mean_clumps, "lead_snp_mean_clumps.bed", sep = "\t", col.na
 (2) count the number of CMH SNPs that fall within those ancestry tracts.
 
 ```
+bash
 
 gwasbed=/scratch/midway3/rozennpineau/drought/randomization/1_overlap_cmh_gwas_observed/lead_snp_mean_clumps.bed 
 cmhbed=/scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought/CMH_FDR01.bed
@@ -52,27 +53,81 @@ Next is to randomly sample bed file that have the same mean size distribution of
 (3) create the randomly sampled bed files:
 
 ```
+r
 
+#goal : to create bed files that have a similar distribution of ancestry block lengths as the observed drought bed file
+
+#full <- read.table("../full_genome_anc_block_mean_len_tab_subset.bed", sep = "\t", header = F) #change to header = T with full file
+full <- read.table("../ancestry_block_mean_786257.bed", sep = "\t", header = T)
+#obs <- read.table("observed_anc_block_len_distr.txt", sep = "\t", header = T) #plus or minus 100 bp
+obs <- read.table("../1_overlap_cmh_gwas_observed/lead_snp_mean_clumps.bed", sep = "\t", header = T ) #43 clumps
+n_perm <- 100
 precision <- 500
 #precision <- 1000
-#precision <- 5000
+precision <- 5000
 
-for (perm in 1:100) {
-        store_bed <- c()
+for (perm in 1:n_perm) {
+        cur_bed <- data.frame(matrix(NA, length(obs$len), 4))
+        colnames(cur_bed) <- c("chrom", "pos1", "pos2", "len")
         for (i in 1:length(obs$len)) {
                 idx_pool <- which(full[,4] > obs$len[i]-precision & full[,4] < obs$len[i]+precision)
                 if (length(idx_pool)<1){break} #no matches
                 idx_local <- sample(idx_pool,1,replace=F)
-                cur_bed <- full[idx_local,]
-                store_bed <- rbind(store_bed, cur_bed)
-                write.table(store_bed, paste("random_anc_block_", perm,".bed", sep = ""), sep = "\t", col.names = F, row.names = F, quote = F )
+                cur_bed$chrom[i] <- full$chrom[idx_local]
+                cur_bed$pos1[i] <- full$pos1[idx_local] - round(full$mean_anc_block_length[idx_local]/2)
+                cur_bed$pos2[i] <- full$pos1[idx_local] + round(full$mean_anc_block_length[idx_local]/2)
+                cur_bed$len[i] <- full$mean_anc_block_length[idx_local]
+                write.table(cur_bed, paste("random_anc_block_", perm,".bed", sep = ""), sep = "\t", col.names = F, row.names = F, quote = F )
         }
 }
+
 ```
 
 (4) calculate the overlaps
 
+```
+bash
 
+
+#!/bin/bash/
+#SBATCH --job-name=rdn
+#SBATCH --output=rdn.out
+#SBATCH --error=rdn.err
+#SBATCH --time=1:00:00
+#SBATCH --partition=caslake
+#SBATCH --account=pi-kreiner
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --mem-per-cpu=10G   # memory per cpu-core
+
+#activate conda
+module load python/anaconda-2022.05
+source /software/python-anaconda-2022.05-el8-x86_64/etc/profile.d/conda.sh
+conda activate /project/kreiner
+
+cd /scratch/midway3/rozennpineau/drought/randomization/3_calculate_overlap/
+
+#load cmh bed
+cmhbed=/scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought/CMH_FDR01.bed
+
+rm -f nb_overlaps.txt
+echo -e "total_overlaps\tmean_overlaps" > nb_overlaps.txt
+
+for gwasbed in ../2_create_bed/*.bed; do
+
+    bedtools intersect -a $gwasbed -b $cmhbed -c |
+    awk '
+        { sum += $NF; n++ }
+        END {
+            if (n > 0)
+                printf "%d\t%.6f\n", sum, sum/n
+            else
+                printf "0\tNA\n"
+        }
+    ' >> nb_overlaps.txt
+
+done
+```
 
 
 
