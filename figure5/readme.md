@@ -16,4 +16,4 @@ Step (2) - extract max temperature and total precipitation for the summmer month
 
 Step (3) - test and plot associations with climate
 
---> model and plot for Figure 5D [Figure5D.Rmd](https://github.com/rozenn-pineau/drought-project/tree/main/figure5/Figure5D.Rmd)
+--> model and plot for Figure 5D: [Figure5D.Rmd](https://github.com/rozenn-pineau/drought-project/tree/main/figure5/Figure5D.Rmd)
