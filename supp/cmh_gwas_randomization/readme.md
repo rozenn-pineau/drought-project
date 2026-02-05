@@ -137,6 +137,7 @@ for gwasbed in ../2_create_bed/*.bed; do
 done
 ```
 
+Plot results: [plot_CMH_gwas.Rmd](https://github.com/rozenn-pineau/drought-project/edit/main/supp/cmh_gwas_randomization/plot_CMH_gwas.Rmd)
 
 
 
