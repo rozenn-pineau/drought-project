@@ -1,3 +1,11 @@
+### Find the number of overlaps between the CMH scan with FDR < 0.01 and the 893 (non clumped) GWAS loci
+
+```
+gwasbed=/scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought/gwas_893.bed
+cmhbed=/scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought/CMH_FDR01.bed
+bedtools intersect -a $gwasbed -b $cmhbed  -wa -wb -f 0.99 -r > overlap_cmh_gwas.txt
+```
+
 ### Randomization analysis for CMH scan / drought variants taking into account LD
 
 (1) extract bed file that spans mean ancestry tract length for each 43 lead SNP, with the lead SNP placed in the middle of the tract:
