@@ -1,0 +1,286 @@
+---
+title: "Plot p values from CMH scan and GWAS on drought (only) datasets"
+output: html_document
+date: "2025-04-30"
+---
+
+```{r libraries}
+rm(list= ls())
+
+library(extrafont)
+library(colourvalues)
+library(tidyverse)
+
+```
+
+I compared the 893 significant loci from the drought dataset GWAS to the 685,097 loci from the drought only CMH scans and found 60 overlaps. 
+
+
+# Upload datasets
+```{r setup, include=FALSE}
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/drought_CMH_gwas/")
+
+common_all <- read.table("intersect_all_drought_cmh_gwas.bed")
+colnames(common_all) <- c("chrom_gwas", "start_pos_gwas", "end_pos_gwas", "pval_gwas", 
+                            "chrom_cmh", "start_pos_cmh", "end_pos_cmh", "pval_cmh") 
+
+#export common sites
+# write.table(common_all[sites,c(1:3)], 
+#             "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/drought_CMH_gwas/common_CHM_GWAS_drought.bed",
+#             col.names = F, row.names = F, quote = F)
+```
+Try different thresholds to see which threshold maximize the proportion of sites in common between the CMH and the GWAS analyses on the drought datasets. 
+
+```{r loop_through_thresholds}
+tresh_vec <- c(0.001, seq(0.005,0.05,by=0.005))
+number_common_loci <- matrix(NA,1,length(tresh_vec))
+prop_common_loci <- matrix(NA,1,length(tresh_vec))
+
+for (i in 1:length(tresh_vec)){
+  
+  threshold <- tresh_vec[i]
+  N <- length(which(common_all$pval_cmh <= threshold))
+  print(N)
+  n <- length(which(common_all$pval_gwas <= 0.05 & common_all$pval_cmh <= threshold))
+  number_common_loci[i] <- n
+  prop_common_loci[i] <- n/N
+}
+
+max(prop_common_loci)
+#threshold of 0.005 maximizes both the number of loci in common and the proportion over the total number of loci in the CMH scan
+
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/drought_CMH_gwas/loop_through_thresholds.pdf", 
+    bg = "transparent", width=5, height=4, family = "Times New Roman")
+
+par(mar = c(5, 4, 4, 4) + 0.3, family = "Times New Roman")  # Leave space for z axis
+#left plot
+plot(tresh_vec, prop_common_loci, pch = 16, type = "b", xlim = c(0,0.05), ylim = c(0,0.005),
+     ylab = "% loci in common/all loci in CMH", xlab = "FDR threshold", main = "CMH scan and GWAS intersection")
+#right plot
+par(new = TRUE)
+plot(tresh_vec, number_common_loci, type = "b", axes = FALSE, bty = "n", xlab = "", ylab = "", pch = 16, col = "blue")
+axis(side=4, at = seq(0,60,by=10))
+mtext("Number of loci in common", side=4, line=3)
+
+dev.off()
+```
+
+```{r CMH_GWAS_plot}
+
+
+sites <- (which(common_all$pval_gwas<=0.05 & common_all$pval_cmh<=0.01))
+
+
+pdf(file="/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/drought_CMH_gwas/cmh_gwas_pvalues.pdf", 
+    bg = "transparent", width=6, height=6, family = "Times New Roman")
+
+par(family = "Times New Roman")
+
+plot(-log10(common_all$pval_gwas), -log10(common_all$pval_cmh), 
+     pch = 16, xlab = "GWAS-detected loci FDR-corrected p-values (-LOG)", 
+     ylab = "CMH-detected loci FDR-corrected p-values (-LOG)")
+#significant p-values in both
+points(-log10(common_all$pval_gwas[sites]), -log10(common_all$pval_cmh[sites]), col = "red", pch = 16)
+#add FDR thresholds
+abline(h=-log10(0.01), col = "red")
+abline(v=-log10(0.05), col = "red")
+
+dev.off()
+
+#export common significant loci bed file
+write.table(common_all[sites,], "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/drought_CMH_gwas/common_significant_cmh_gwas.bed", 
+                            sep = "\t", col.names = T, row.names = F, quote = F)
+
+
+#how many chromosomes with SNPs in the CMH
+sites <- (which(common_all$pval_cmh<=0.015))
+summary(as.factor(common_all[sites,]$chrom_gwas))
+#export significant loci from the CMH scan (alpha < 0.015)
+write.table(common_all[sites,], "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/drought_CMH_gwas/common_significant_cmh_015.bed", 
+                            sep = "\t", col.names = T, row.names = F, quote = F)
+
+```
+
+
+# Randomization analysis
+I wrote a script to calculate ancestry block lengths around each drought-adapted locus. I want to look at the data to see if it looks correct. 
+```{r upload_anc_blocks}
+rm(list= ls())
+#block lengths across the genome
+len <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/randomization/ancestry_block_len_genome.txt", sep = " ", header = T)
+head(len)
+summary(len$len)
+    # Min.  1st Qu.   Median     Mean  3rd Qu.     Max. 
+    #   90    35190    89597   243940   235006 46,337,972 
+#maximum chromosome lengths (for sanity checks)
+max_chr_len <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/randomization/chr_length.txt", sep = "")
+
+#bed for 893 drought-adapted loci
+bed <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/randomization/gwas_893.bed", header = T)
+
+#block lengths for 893 drought adapted loci
+dr_len <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/randomization/ancestry_block_len_893x280.txt", header = F, sep = "\t")
+```
+
+## Exploring genome-wide distribution
+```{r exploring_len}
+hist(len$len, breaks = 10000, xlab = "ancestry block length", main = "Genome-wide")
+
+len[which(len$len == max(len$len)),]
+
+hist(len$len[len$len<89597], breaks = 10000, xlab = "ancestry block length", main = "Genome-wide, less than Median")
+
+hist(len$len[len$len>1E7], breaks = 1000, xlab = "ancestry block length", main = "Genome-wide, above 1M bp")
+
+which(len$len<0) #good, nothing <0
+
+```
+
+Things I can calculate to test whether or not what I am looking at makes sense: 
+How long is each chromosome at max
+There seem to be a few problems with the code, with outliers in the +++ or --- regions of the plot
+
+I will use the full genome code to correct this:
+
+(had to run on the cluster)
+```{r build_locus_focused_matrix}
+#use bed file to loop through 893 loci (find the window where the locus lies) and record ancestry block length where the locus is
+# nsamp <- 280
+# nlocus <- 893
+# store <- matrix(NA, nlocus, nsamp)
+# for (samp in 1:nsamp) {
+# #per sample
+#     
+#   for (locus in 1:nlocus) {
+#     
+#       chr <- bed$chrom[locus]
+#       pos <- bed$pos1[locus]
+#       
+#       subfile <- len[len$chr==chr & len$samp == samp,] #subset file by chromosome and sample
+#       #find location in position:
+#       
+#       #is the block within boundaries
+#       if (subfile$start[1] <= pos &  subfile$end[dim(subfile)[1]] >= pos) {
+#               #find block
+#               block <- which(subfile$start >= pos)[1] - 1 #look at the block below the first block that is above the SNP start position
+#       if (block == 0){ store[locus, samp] <- NA } #no data for this sample at this locus
+#       #check that SNP is within the block
+#       else if (subfile$start[block] <= pos & subfile$end[block] >= pos){ #if this is true, record block position
+#       
+#           store[locus, samp] <- subfile$len[block]
+#         
+#         }
+#       }
+# 
+#    }
+#   
+# }
+# 
+# #save
+# write.table(store, "ancestry_block_len_893x280.txt", sep = "\t", row.names = F, col.names = F, quote = F)
+# 
+
+```
+## Exploring drought-adapted loci ancestry block distribution
+```{r dr_len}
+summary(dr_len)
+vec <- c(t(dr_len))
+summary(vec)
+hist(vec, breaks = 1000, xlab = "Ancestry block length", main = "893 drought adapted loci in 280 samples")
+```
+
+
+## Extracting the per site block length mean for the drought adapated loci
+Now that I have the block lengths for each drought-adapted loci in the genome, I need to have the distribution per SNP, across individuals, and sample SNPs from the rest of the genome that have a similar distribution. 
+We can use the mean of the distribution to find identical SNPs to sample from. 
+
+```{r snp_hist}
+
+hist(dr_len[,10], breaks = 100)
+summary(dr_len[,1])
+sd(dr_len[,1], na.rm=T)
+dr_means <- rowMeans(dr_len, na.rm=T)
+summary(dr_means)
+sd(dr_means)
+#histogram
+categories <- hist(dr_means,100000) #20 base-pair long breaks with 100000
+categories <- hist(dr_means,10000) #200 base pair long breaks with 10000
+observed <- data.frame(mid = categories$mids[categories$counts>0],
+                      count = categories$counts[categories$counts>0])
+write.table(observed, "/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/randomization/observed_anc_block_len_distr.txt", sep = "\t", col.names = T, row.names = F, quote = F)
+categories$counts[categories$counts>0]
+table(dr_means)
+
+library(matrixStats)
+dr_se <- apply(dr_len, 1, sd, na.rm=T)/sqrt(280)
+
+par(family = "Times New Roman")
+plot(dr_means[order(dr_means)], pch = 16, xlab = "Locus", ylab = "Ancestry block size mean", main = "Ancestry block size mean for drought-adapted loci (893)", ylim = c(0,3000000))
+
+arrows(1:893, dr_means[order(dr_means)] + dr_se[order(dr_means)], 
+       1:893, dr_means[order(dr_means)] - dr_se[order(dr_means)], code = 3, angle = 90, length = 0)
+
+
+#Extract mean length ancestry block for each 43 lead SNPs
+lead_snp_bed <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/8.ancestry_hmm/1.results/drought_adapted_loci_43.txt", sep = "\t", header = T)
+lead_snp_bed <- lead_snp_bed[,c(1,2)]
+lead_snp_bed$len <- NA
+
+#upload the mean ancestry tract length per 
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/randomization/")
+mean_len_genome <- read.table("full_genome_anc_block_mean_len_tab.bed", sep = "\t", header = T)
+
+for (snp in 1:43) {
+  
+  idx <- which(lead_snp_bed$chrom[snp] == mean_len_genome$chrom & lead_snp_bed$pos[snp] == mean_len_genome$pos1)
+  lead_snp_bed$len[snp] <- mean_len_genome$mean_anc_block_length[idx]
+  
+}
+
+#Make bed file with mean length spanning those 43 lead snps
+lead_snp_mean_clumps <- data.frame(chrom = lead_snp_bed$chrom )
+lead_snp_mean_clumps$pos1 <- lead_snp_bed$pos - round(lead_snp_bed$len/2)
+lead_snp_mean_clumps$pos2 <- lead_snp_bed$pos + round(lead_snp_bed$len/2)
+lead_snp_mean_clumps$len <- lead_snp_bed$len
+
+#Export for intersection with CMH
+setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/randomization/")
+write.table(lead_snp_mean_clumps, "lead_snp_mean_clumps.bed", sep = "\t", col.names = T, row.names = F, quote = F)
+
+```
+
+
+
+```{r results}
+obs_overlap <- 8381 
+Mean <- 194.907
+res_10kb <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/randomization/nb_overlaps_10kb.txt",
+                 sep = "\t", header = T)
+res_1kb <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/11.common_garden/randomization/nb_overlaps_1000.txt",
+                 sep = "\t", header = T)
+
+#Total number
+par(family = "Times New Roman")
+hist(res_10kb$total_overlaps, 25, main = "precision of 10kb", xlab = "Total number of overlaps between cmh and gwas for drought")
+abline(v = obs_overlap, col = "red", lwd = 2)
+length(which(obs_overlap < res_10kb$total_overlaps))/length(res_10kb$total_overlaps)
+
+par(family = "Times New Roman")
+hist(res_1kb$total_overlaps, 25, main = "precision of 1kb", xlab = "Total number of overlaps between cmh and gwas for drought")
+abline(v = obs_overlap, col = "red", lwd = 2)
+length(which(obs_overlap < res_1kb$total_overlaps))/length(res_10kb$total_overlaps)
+
+#Mean number
+par(family = "Times New Roman")
+hist(res_10kb$mean_overlaps, 25, main = "precision of 10kb", xlab = "Total number of overlaps between cmh and gwas for drought")
+abline(v = Mean, col = "red", lwd = 2)
+length(which(Mean < res_10kb$mean_overlaps))/length(res_10kb$total_overlaps)
+
+par(family = "Times New Roman")
+hist(res_1kb$mean_overlaps, 25, main = "precision of 1kb", xlab = "Total number of overlaps between cmh and gwas for drought")
+abline(v = Mean, col = "red", lwd = 2)
+length(which(Mean < res_1kb$mean_overlaps))/length(res_10kb$total_overlaps)
+
+```
+
+
