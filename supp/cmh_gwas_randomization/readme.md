@@ -5,6 +5,31 @@ gwasbed=/scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought
 cmhbed=/scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought/CMH_FDR01.bed
 bedtools intersect -a $gwasbed -b $cmhbed  -wa -wb -f 0.99 -r > overlap_cmh_gwas.txt
 ```
+### Find the number of genes in the clumped and non-clumped CMH scan with FDR < 0.01
+
+How many genes in the non-clumped CMH scan (FDR < 0.01) ?
+```
+cmhbed=/scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought/CMH_FDR01.bed
+#prep bed file
+awk '{OFS="\t";print $1, $2, $2}' $cmhbed > cmh_010.bed
+
+#add “Scaffold_” 
+awk -v OFS="\t" '{$1 = "Scaffold_" $1}1' cmh_010.bed > cmh_010_scaffold.bed
+
+#intersect with gff
+act-conda
+gff=/project/kreiner/data/genome/Atub_193_hap2.all.sorted.gff
+bed=cmh_010_scaffold.bed
+bedtools intersect -a $bed -b $gff -wo > overlap_cmh_010_gff.bed
+
+#extract number of CMH hits in genes
+less overlap_cmh_010_gff.bed | cut -f 6 | grep gene | wc -l
+#44,692
+```
+44,692 hits in genes !
+
+
+Clump:
 
 ### Randomization analysis for CMH scan / drought variants taking into account LD
 
