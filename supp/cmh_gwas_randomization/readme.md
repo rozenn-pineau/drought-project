@@ -29,7 +29,78 @@ less overlap_cmh_010_gff.bed | cut -f 6 | grep gene | wc -l
 44,692 hits in genes !
 
 
-Clump:
+Clumpimpg the CMH file needs several steps:
+**(1)** Filter initial vcf based on FDR < 0.01 bed file
+```
+#!/bin/bash
+#SBATCH --job-name=filter_vcf
+#SBATCH --output=err.out
+#SBATCH --error=err.in
+#SBATCH --time=5:00:00
+#SBATCH --partition=caslake
+#SBATCH --account=pi-kreiner
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1
+#SBATCH --mem-per-cpu=10G   # memory per cpu-core
+
+cd /scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought
+module load vcftools
+vcf=/scratch/midway3/rozennpineau/drought/admixture/merged_numericChr.vcf.gz
+bed=/scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought/CMH_FDR01.bed
+vcftools --gzvcf $vcf --bed $bed --out cmh_010 --recode
+
+#note : check if you need to use the character (Scaffold_) and not numeric names!
+#note : need for a slurm job, the terminal without a batch job was very slow!
+```
+**(2)** Make plink files
+
+```
+#change CHROM:POS field to ID
+module load htslib
+bgzip cmh_010.recode.vcf
+bcftools tabix cmh_010.recode.vcf.gz
+bcftools annotate --set-id +'%CHROM:%POS' cmh_010.recode.vcf.gz -o cmh_010_ID.vcf.gz
+
+#make plink family files
+vcf=cmh_010_ID.vcf.gz
+plink --vcf $vcf --out cmh_010_tothin --allow-extra-chr --recode --double-id
+```
+
+```
+#in: /scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought
+assoc=FDRdrought 
+#remove Scaffold from chromosome name in association file
+sed 's/Scaffold_//g' $assoc > FDRdrought_numeric
+#replace SNP with ID in association file
+sed 's/SNP/ID/g' FDRdrought_numeric > FDRdrought_numeric_ID
+
+assoc=FDRdrought_numeric_ID
+plink --file cmh_010_tothin --clump $assoc --clump-p1 0.01 --clump-field FDR_p --clump-kb 100 --out cmh_010_clumped_100kb --allow-no-sex --allow-extra-chr --clump-snp-field ID
+
+```
+42831 clumps formed from 94052 top variants.
+
+How many genes in the clumped CMH scan (FDR < 0.01) ?
+
+```
+cmhbed=/scratch/midway2/rozennpineau/drought/compare_sites_commongarden_drought/drought/CMH_FDR01.bed
+#prep bed file
+awk '{OFS="\t";print $1, $2, $2}' $cmhbed > cmh_010.bed
+
+#add “Scaffold_” 
+awk -v OFS="\t" '{$1 = "Scaffold_" $1}1' cmh_010.bed > cmh_010_scaffold.bed
+
+#intersect with gff
+act-conda
+gff=/project/kreiner/data/genome/Atub_193_hap2.all.sorted.gff
+bed=cmh_010_scaffold.bed
+bedtools intersect -a $bed -b $gff -wo > overlap_cmh_010_gff.bed
+
+#extract number of CMH hits in genes
+less overlap_cmh_010_gff.bed | cut -f 6 | grep gene | wc -l
+```
+
+
 
 ### Randomization analysis for CMH scan / drought variants taking into account LD
 
