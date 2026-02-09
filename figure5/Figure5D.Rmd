@@ -107,6 +107,7 @@ test : Frequency ~ year + loci + climate + lat/long (maybe interaction between y
 lm.res4 <- lm(data = climate_long, 
              value ~ tmax*year + prcp*year  + variable + samp_lat + samp_lon)
 summary(lm.res4)
+lm.res4$coefficients
 Anova(lm.res4, type = "III")
 AIC(lm.res4) #903.233
 #slopes
@@ -195,8 +196,16 @@ emt <- emtrends(lm.res.env, ~ prcp + factor(Env), "year", at = list(prcp =  c(5,
 #predictions without habitat
 lsm <- lsmip(lm.res.env,  ~ year + prcp, plot=F,
             at = list(year = c(1880,1950,2005), prcp = c(50,850)))
+
 #slope values without habitat
 emt <- emtrends(lm.res.env, ~ prcp, "year", at = list(prcp =  c(50 ,850)))
+ # prcp year.trend       SE   df  lower.CL  upper.CL
+ #   50    0.00163 0.000856 1002 -0.000046  3.31e-03
+ #  850   -0.00301 0.001510 1002 -0.005978 -4.35e-05
+
+ # 0.00163*2=0.00326 at 50 for linear selection coefficients
+# -0.00301*2=-0.00602 at 850 for linear selection coefficients
+
 
 #slope for latitude
 emt <- emtrends(lm.res.env, ~ year, "samp_lat", at = list(year = c(1950, 2000)))
@@ -290,7 +299,15 @@ Anova(log.res, type = "III")
 #slope values
 emt <- emtrends(log.res, ~ tmax , "year", at = list(tmax =  c(25,45)))
 
-emt <- emtrends(log.res, ~ tmax + prcp, "year", at = list(tmax =  c(25,45), prcp = c(50,850)))
+emt <- emtrends(log.res, ~ tmax + prcp, "year", at = list(prcp = c(50,850)))
+
+emt <- emtrends(log.res, ~ prcp, "year", at = list(prcp = c(50,850)))
+# prcp year.trend      SE  df asymp.LCL asymp.UCL
+#    50    0.00128 0.00404 Inf  -0.00665    0.0092
+#   850   -0.01266 0.00758 Inf  -0.02752    0.0022
+#0.00128*2 = 0.00256
+#-0.01266*2 = -0.02532
+
 
  # tmax year.trend      SE  df asymp.LCL asymp.UCL
  #   25    -0.0199 0.00809 Inf  -0.03580  -0.00408
@@ -310,11 +327,17 @@ summary(log.res)
 Anova(log.res, type = "III")
 
 #slope values
+emt <- emtrends(log.res, ~ prcp, "year", at = list(prcp =  c(50,850)))
+
+
+#slope values
 emt <- summary(emtrends(log.res, ~ prcp + year, "year", at = list(prcp =  c(50,275,850))))
 
 # at 50 : 0.00729*2=0.01458 SD = 0.00519*2 = 0.01038
 # at 275 : 0.00145*2=0.0029
 # at 850 : -0.01345*2=-0.0269 SD = 0.00923*2 = 0.01846
+# logistic regression values for selection coefficients
+
 ```
 
 Model results align with results from linear regression model, but we can extract the selection coefficients that are more easily interpretative. 
@@ -346,7 +369,7 @@ jitter_year <- sample(seq(-1,1,by=0.1), 33, replace = T)
 for (samp in 1:dim(climate)[1]) {
   points(rep(climate$year[samp], length(climate[samp,c(7:39)])) + jitter_year, 
          climate[samp,c(7:39)] + jitter[1:length(which(!is.na(climate[samp,c(7:39)])))] ,
-         pch = 16, col = scales::alpha("gray", 0.5), cex = 1)
+         pch = 16, col = scales::alpha("gray", 0.2), cex = 1)
 }
 
 # DRY
@@ -375,9 +398,10 @@ lines(lsm$year[c(7,8,9)], lsm$yvar[c(7,8,9)], col = prcp_col[3], lwd = 2, lty = 
 em <- emtrends(lm.res.env,  ~ year + prcp, "year",
             at = list( prcp = c(50,275,850)))
 
-text(1900,0.3, "s = 0.015 []", col = prcp_col[1])
-text(1980,0.8, "s = -0.027", col = prcp_col[3])
-
+em <- emtrends(lm.res.env,  ~  prcp, "year",
+            at = list( prcp = c(50,850)))
+#0.00163*2 = 0.00326 linear prediction of selection at 50
+#-0.00301*2 = -0.00602 linear prediction of selection at 850
 
 dev.off()
 
