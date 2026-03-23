@@ -44,6 +44,5 @@ vcftools --gzvcf ../merged_filteredsnps_rename.vcf.gz --remove-indv P16_Nat_1_T 
 
 ```
 
-
 Plot distributions in R. 
 
