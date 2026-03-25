@@ -29,12 +29,52 @@ for (perm in 1:n_perm) {
 (2) filter vcf from bed
 
 ```
+# for one file
 vcf=/scratch/midway2/rozennpineau/drought/two_pulse_flexible_prop_2/two_pulse_flexible_prop_2_values.vcf
 bedtools intersect -b random_43_loci1.bed -a $vcf > tmp1
 #add header
 cat header tmp1 > tmp2
 vcftools --vcf tmp2 --TajimaD 5000 --remove-indv P16_Nat_1_T --remove-indv P12_Nat_14_T --out drought_adapted_43clumps_5kbwindows_test
-
 ```
+Loop through all bed files:
+```
+#!/bin/bash
 
+vcf="/scratch/midway2/rozennpineau/drought/two_pulse_flexible_prop_2/two_pulse_flexible_prop_2_values.vcf"
+header="header"
+output="all_tajimaD_results.txt"
+
+# empty output file if it exists
+> $output
+
+for bed in *.bed
+do
+    prefix=$(basename "$bed" .bed)
+
+    echo "Processing $bed ..."
+
+    # intersect
+    bedtools intersect -b "$bed" -a "$vcf" > tmp1
+
+    # add header
+    cat "$header" tmp1 > tmp2
+
+    # run vcftools
+    vcftools --vcf tmp2 \
+        --TajimaD 5000 \
+        --remove-indv P16_Nat_1_T \
+        --remove-indv P12_Nat_14_T \
+        --out "$prefix"
+
+    # append results (skip header line after first file)
+    if [ ! -s "$output" ]; then
+        cat "${prefix}.Tajima.D" >> "$output"
+    else
+        tail -n +2 "${prefix}.Tajima.D" >> "$output"
+    fi
+
+    # clean up intermediate files
+    rm -f tmp1 tmp2
+done
+```
 
