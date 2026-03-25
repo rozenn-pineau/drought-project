@@ -1,4 +1,6 @@
-#Makes map for Figure 1
+#this script : plots raw phenotypic data for survival through time,
+#calculates LD50 from non linear fit,
+#maps LD50 value in space.
 
 library(gsheet)
 library(ggplot2)
@@ -28,6 +30,7 @@ library(ggthemes)
 library(geodata)
 library(ggnewscale)
 library(raster)
+library(paletteer)
 
 rm(list= ls())
 
@@ -50,10 +53,7 @@ ld50$lat_mod[ag_idx] <- ld50$lat_mod[ag_idx] - 0.3
 #Herbarium samples
 herb <- read.table("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/data/5.herbarium/data/herbarium_samps.txt", sep = "\t", header = T)
 herb_fil <- herb[herb$Year>=1880,]
-
-herb_fil$cols <- colour_values(herb_fil$Year, palette = "viridis")
 min(herb_fil$Long, na.rm=T)
-
 
 
 states    <- c("New York","New Jersey","Delaware","Maryland",
@@ -115,7 +115,7 @@ uss<-uss %>% add_row(NAME_1 = "Ontario", lon = -78.5554, lat=45)
 #ca.provinces.df <- fortify(as.data.frame(ca.provinces))
 
 setwd("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/4.phenotypes/")
-pdf(file=paste("map_figure1.pdf", sep="" ), bg = "transparent", width=10, height=5)
+pdf(file=paste("map_figure1_legend.pdf", sep="" ), bg = "transparent", width=10, height=5)
 
 plain1<- 
   ggplot()+
@@ -138,15 +138,17 @@ plain1<-
 #plot map base with contemporary samples
 p1 <- plain1 + 
   geom_jitter(data=ld50,
-              aes(y = lat_mod, x = long_mod, fill = long_cols, shape = env), size=4, alpha=1, color = "grey50") +
+              aes(y = lat_mod, x = long_mod, fill = long_cols, shape = env), size=6, alpha=1, color = "grey50") +
   scale_shape_manual(values = c(Ag = 21, Nat = 22)) +
   scale_fill_manual(values = setNames(ld50$long_cols, ld50$long_cols)) +
   xlab("Longitude") + ylab("Latitude") + 
   theme(legend.position = "none") + 
   new_scale_color() +
   geom_jitter(data=herb_fil, #plot map base with herbarium samples
-              aes(y = Lat, x = Long, color = cols), size=2,  alpha=1) + 
-  scale_color_manual(values = setNames(herb_fil$cols, herb_fil$cols)) 
+              aes(y = Lat, x = Long, color = Year), size=3,  alpha=1) + 
+  #scale_colour_continuous(palette = c("#c994c7", "#df65b0","#e7298a", "#67001f", "black")) +
+  #scale_colour_continuous(palette = c("#d0d1e6", "#67a9cf", "#02818a", "#014636", "black")) +
+  scale_colour_continuous(palette = c("#ccebc5", "#7bccc4", "#4eb3d3", "#2b8cbe","#0868ac", "black"))
 p1
 
 dev.off()
@@ -155,9 +157,18 @@ dev.off()
 pdf(file=paste("/Users/rozenn/Library/CloudStorage/GoogleDrive-rozennpineau@uchicago.edu/My Drive/Work/9.Science/1.DroughtProject/1.analyses/figures/4.phenotypes/scale_herb_orange.pdf", sep="" ), bg = "transparent", width=6, height=3)
 
 par(family = "Times New Roman", cex = 1.3)
-scale_data <- data.frame(a = 4, x = min(herb_fil$Year):max(herb_fil$Year))
-scale_data$cols <- colour_values(scale_data$x, palette = "viridis")
-barplot(height = scale_data$a, col = scale_data$cols, space = 0, border = NA, names.arg = round(scale_data$x), yaxt='n', ann=FALSE) # 
+# scale_data <- data.frame(a = 4, x = min(herb_fil$Year):max(herb_fil$Year))
+# scale_data$cols <- colour_values(scale_data$x, palette = "viridis")
+# barplot(height = scale_data$a, col = scale_data$cols, space = 0, border = NA, names.arg = round(scale_data$x), yaxt='n', ann=FALSE) # 
+#plot map base with contemporary samples
+p1 <- plain1 + 
+  geom_jitter(data=herb_fil, #plot map base with herbarium samples
+              aes(y = Lat, x = Long, color = Year), size=2,  alpha=1) + 
+  scale_colour_continuous(palette = c("#ccebc5", "#7bccc4", "#4eb3d3", "#2b8cbe","#0868ac", "black")) +
+  theme(legend.position="bottom") +
+  theme(legend.key.width=unit(2, "cm"))
+p1
+
 
 dev.off()
 
