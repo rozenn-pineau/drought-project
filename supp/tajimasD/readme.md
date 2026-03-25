@@ -44,8 +44,10 @@ vcf="/scratch/midway2/rozennpineau/drought/two_pulse_flexible_prop_2/two_pulse_f
 header="header"
 output="all_tajimaD_results.txt"
 
-# empty output file if it exists
-> $output
+# remove old output if it exists
+rm -f "$output"
+
+first=1
 
 for bed in *.bed
 do
@@ -66,14 +68,17 @@ do
         --remove-indv P12_Nat_14_T \
         --out "$prefix"
 
-    # append results (skip header line after first file)
-    if [ ! -s "$output" ]; then
-        cat "${prefix}.Tajima.D" >> "$output"
+    tajima_file="${prefix}.Tajima.D"
+
+    # append results line-wise
+    if [ $first -eq 1 ]; then
+        cat "$tajima_file" >> "$output"
+        first=0
     else
-        tail -n +2 "${prefix}.Tajima.D" >> "$output"
+        tail -n +2 "$tajima_file" >> "$output"
     fi
 
-    # clean up intermediate files
+    # clean up
     rm -f tmp1 tmp2
 done
 ```
